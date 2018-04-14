@@ -18,6 +18,15 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//**************************************************************************************
+//
+// CLASS: OMXReader
+//
+//    ABSTRACTED STREAM READER THAT CAN READ/SEEK THROUGH EITHER FILES OR STREAMS.
+//
+//    THIS APPEARS TO ALSO BE THE INTERFACE TO FFMPEG (SEE AVStream CLASS/STRUCT)
+//
+//**************************************************************************************
 
 #ifndef _OMX_READER_H_
 #define _OMX_READER_H_
@@ -94,6 +103,7 @@ typedef struct OMXStream
   COMXStreamInfo hints;
 } OMXStream;
 
+/////////////////////////////////////////////////////////////////////////////////
 class OMXReader
 {
 protected:

@@ -18,6 +18,7 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+ 
 
 #if (defined HAVE_CONFIG_H) && (!defined WIN32)
   #include "config.h"
@@ -56,6 +57,8 @@
 #define OMX_THEORA_DECODER      OMX_VIDEO_DECODER
 #define OMX_MJPEG_DECODER       OMX_VIDEO_DECODER
 
+///////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 COMXVideo::COMXVideo() : m_video_codec_name("")
 {
   m_is_open           = false;
@@ -71,11 +74,14 @@ COMXVideo::COMXVideo() : m_video_codec_name("")
   m_pixel_aspect      = 1.0f;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 COMXVideo::~COMXVideo()
 {
   Close();
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool COMXVideo::SendDecoderConfig()
 {
   CSingleLock lock (m_critSection);
@@ -110,6 +116,7 @@ bool COMXVideo::SendDecoderConfig()
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool COMXVideo::NaluFormatStartCodes(enum AVCodecID codec, uint8_t *in_extradata, int in_extrasize)
 {
   switch(codec)
@@ -125,6 +132,7 @@ bool COMXVideo::NaluFormatStartCodes(enum AVCodecID codec, uint8_t *in_extradata
   return false;    
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::PortSettingsChangedLogger(OMX_PARAM_PORTDEFINITIONTYPE port_image, int interlaceEMode)
 {
   CLog::Log(LOGDEBUG, "%s::%s - %dx%d@%.2f interlace:%d deinterlace:%d anaglyph:%d par:%.2f display:%d layer:%d alpha:%d aspectMode:%d", CLASSNAME, __func__,
@@ -132,12 +140,16 @@ void COMXVideo::PortSettingsChangedLogger(OMX_PARAM_PORTDEFINITIONTYPE port_imag
       port_image.format.video.xFramerate / (float)(1<<16), interlaceEMode, m_deinterlace, m_config.anaglyph, m_pixel_aspect, m_config.display,
       m_config.layer, m_config.alpha, m_config.aspectMode);
 
-  printf("V:PortSettingsChanged: %dx%d@%.2f interlace:%d deinterlace:%d anaglyph:%d par:%.2f display:%d layer:%d alpha:%d aspectMode:%d\n",
+  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // DEBUG: SHOW WHEN PORT SETTINGS CHANGED
+  /*printf("V:PortSettingsChanged: %dx%d@%.2f interlace:%d deinterlace:%d anaglyph:%d par:%.2f display:%d layer:%d alpha:%d aspectMode:%d\n",
       port_image.format.video.nFrameWidth, port_image.format.video.nFrameHeight,
       port_image.format.video.xFramerate / (float)(1<<16), interlaceEMode, m_deinterlace, m_config.anaglyph, m_pixel_aspect, m_config.display,
-      m_config.layer, m_config.alpha, m_config.aspectMode);
+      m_config.layer, m_config.alpha, m_config.aspectMode); //*/
+  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool COMXVideo::PortSettingsChanged()
 {
   CSingleLock lock (m_critSection);
@@ -364,6 +376,8 @@ bool COMXVideo::PortSettingsChanged()
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// SET UP VIDEO DECODER BLOCK WITH GIVEN CLOCK AND VIDEO DECODING CONFIG PARAMETERS... ???
 bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
 {
   CSingleLock lock (m_critSection);
@@ -382,12 +396,14 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
   m_submitted_eos = false;
   m_failed_eos    = false;
 
+  // HINTS MUST CONTAIN VIDEO WIDTH AND HEIGHT?..
   if(!m_config.hints.width || !m_config.hints.height)
     return false;
 
+  // CHOOSE VIDEO DECODER TYPE...
   switch (m_config.hints.codec)
   {
-    case AV_CODEC_ID_H264:
+    case AV_CODEC_ID_H264: // VARIOUS H264 PROFILES
     {
       switch(m_config.hints.profile)
       {
@@ -424,12 +440,14 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
           break;
       }
     }
+    // MVC IS FOR ENCODING STEREOSCOPIC (TWO-VIEW) 3D VIDEO, AS WELL AS FREE VIEWPOINT TELEVISION AND MULTI-VIEW 3D TELEVISION
     if (m_config.allow_mvc && m_codingType == OMX_VIDEO_CodingAVC)
     {
        m_codingType = OMX_VIDEO_CodingMVC;
        m_video_codec_name = "omx-mvc";
     }
     break;
+    //-------------------------------------------
     case AV_CODEC_ID_MPEG4:
       // (role name) video_decoder.mpeg4
       // MPEG-4, DivX 4/5 and Xvid compatible
@@ -437,6 +455,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingMPEG4;
       m_video_codec_name = "omx-mpeg4";
       break;
+    //-------------------------------------------
     case AV_CODEC_ID_MPEG1VIDEO:
     case AV_CODEC_ID_MPEG2VIDEO:
       // (role name) video_decoder.mpeg2
@@ -445,6 +464,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingMPEG2;
       m_video_codec_name = "omx-mpeg2";
       break;
+    //-------------------------------------------
     case AV_CODEC_ID_H263:
       // (role name) video_decoder.mpeg4
       // MPEG-4, DivX 4/5 and Xvid compatible
@@ -452,10 +472,12 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingMPEG4;
       m_video_codec_name = "omx-h263";
       break;
+    //-------------------------------------------
     case AV_CODEC_ID_VP6:
       // this form is encoded upside down
       vflip = true;
       // fall through
+    //-------------------------------------------
     case AV_CODEC_ID_VP6F:
     case AV_CODEC_ID_VP6A:
       // (role name) video_decoder.vp6
@@ -464,6 +486,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingVP6;
       m_video_codec_name = "omx-vp6";
     break;
+    //-------------------------------------------
     case AV_CODEC_ID_VP8:
       // (role name) video_decoder.vp8
       // VP8
@@ -471,6 +494,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingVP8;
       m_video_codec_name = "omx-vp8";
     break;
+    //-------------------------------------------
     case AV_CODEC_ID_THEORA:
       // (role name) video_decoder.theora
       // theora
@@ -478,6 +502,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingTheora;
       m_video_codec_name = "omx-theora";
     break;
+    //-------------------------------------------
     case AV_CODEC_ID_MJPEG:
     case AV_CODEC_ID_MJPEGB:
       // (role name) video_decoder.mjpg
@@ -486,6 +511,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingMJPEG;
       m_video_codec_name = "omx-mjpeg";
     break;
+    //-------------------------------------------
     case AV_CODEC_ID_VC1:
     case AV_CODEC_ID_WMV3:
       // (role name) video_decoder.vc1
@@ -494,18 +520,21 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_codingType = OMX_VIDEO_CodingWMV;
       m_video_codec_name = "omx-vc1";
       break;    
-    default:
+    //-------------------------------------------
+    default: // UNNOWN CODEC
       printf("Vcodec id unknown: %x\n", m_config.hints.codec);
       return false;
     break;
   }
 
+  // ATTEMPT TO INITIALIZE THE DECODER...
   if(!m_omx_decoder.Initialize(decoder_name, OMX_IndexParamVideoInit))
     return false;
 
   if(clock == NULL)
     return false;
 
+  // START SETTING UP THE CLOCKS...
   m_av_clock = clock;
   m_omx_clock = m_av_clock->GetOMXClock();
 
@@ -516,6 +545,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
     return false;
   }
 
+  // INITIALIZE DECODER TO 'IDLE' STATE...?
   omx_err = m_omx_decoder.SetStateForComponent(OMX_StateIdle);
   if (omx_err != OMX_ErrorNone)
   {
@@ -523,6 +553,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
     return false;
   }
 
+  // SET UP DECODER FORMAT TYPE
   OMX_VIDEO_PARAM_PORTFORMATTYPE formatType;
   OMX_INIT_STRUCTURE(formatType);
   formatType.nPortIndex = m_omx_decoder.GetInputPort();
@@ -537,6 +568,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
     formatType.xFramerate = 25 * (1<<16);
   }
 
+  // SET DECODER PORT FORMAT TYPE 
   omx_err = m_omx_decoder.SetParameter(OMX_IndexParamVideoPortFormat, &formatType);
   if(omx_err != OMX_ErrorNone)
     return false;
@@ -558,6 +590,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
   portParam.format.video.nFrameWidth  = m_config.hints.width;
   portParam.format.video.nFrameHeight = m_config.hints.height;
 
+  // SET DECODER PORT FORMAT TYPE AGAIN...?
   omx_err = m_omx_decoder.SetParameter(OMX_IndexParamPortDefinition, &portParam);
   if(omx_err != OMX_ErrorNone)
   {
@@ -565,13 +598,13 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
     return false;
   }
 
+  // REQUEST CALLBACK WHEN ASPECT RATIO CHANGED...
   // request portsettingschanged on aspect ratio change
   OMX_CONFIG_REQUESTCALLBACKTYPE notifications;
   OMX_INIT_STRUCTURE(notifications);
   notifications.nPortIndex = m_omx_decoder.GetOutputPort();
   notifications.nIndex = OMX_IndexParamBrcmPixelAspectRatio;
   notifications.bEnable = OMX_TRUE;
-
   omx_err = m_omx_decoder.SetParameter((OMX_INDEXTYPE)OMX_IndexConfigRequestCallback, &notifications);
   if (omx_err != OMX_ErrorNone)
   {
@@ -608,6 +641,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
     }
   }
 
+  // ALLOCATE BUFFER FOR THE OMX INPUT PORT
   // Alloc buffers for the omx intput port.
   omx_err = m_omx_decoder.AllocInputBuffers();
   if (omx_err != OMX_ErrorNone)
@@ -629,6 +663,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
   m_drop_state        = false;
   m_setStartTime      = true;
 
+  // ACTIVATE ROTATION TRANSFORM (NOTE THAT UNDOCUMENTED MIRROR MODES ARE SUPPORTED)
   switch(m_config.hints.orientation)
   {
     case 90:
@@ -656,9 +691,15 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
       m_transform = OMX_DISPLAY_ROT0;
       break;
   }
+  
+  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! BUG !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // WHY IS THERE A SEPARATE FLAG FOR VFLIP THAT OVERRIDES ROTATION??
+  // PROBABLY FOR SOME CODECS THAT ARE FLIPPED... 
+  // (THIS LOOKS LIKE A BUG -- ROTATION WON'T WORK WHEN THOSE FLIPPED CODECS ARE USED)
   if (vflip)
       m_transform = OMX_DISPLAY_MIRROR_ROT180;
 
+  // CHECK FOR ERRORS
   if(m_omx_decoder.BadState())
     return false;
 
@@ -673,6 +714,7 @@ bool COMXVideo::Open(OMXClock *clock, const OMXVideoConfig &config)
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::Close()
 {
   CSingleLock lock (m_critSection);
@@ -698,23 +740,28 @@ void COMXVideo::Close()
   m_av_clock          = NULL;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::SetDropState(bool bDrop)
 {
   m_drop_state = bDrop;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 unsigned int COMXVideo::GetFreeSpace()
 {
   CSingleLock lock (m_critSection);
   return m_omx_decoder.GetInputBufferSpace();
 }
 
+///////////////////////////////////////////////////////////////////////////////
 unsigned int COMXVideo::GetSize()
 {
   CSingleLock lock (m_critSection);
   return m_omx_decoder.GetInputBufferSize();
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// DECODE GIVEN BUFFER OF VIDEO DATA
 int COMXVideo::Decode(uint8_t *pData, int iSize, double dts, double pts)
 {
   CSingleLock lock (m_critSection);
@@ -798,6 +845,7 @@ int COMXVideo::Decode(uint8_t *pData, int iSize, double dts, double pts)
   return false;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::Reset(void)
 {
   CSingleLock lock (m_critSection);
@@ -819,17 +867,26 @@ void COMXVideo::SetVideoRect(const CRect& SrcRect, const CRect& DestRect)
   SetVideoRect();
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::SetVideoRect(int aspectMode)
 {
   m_config.aspectMode = aspectMode;
   SetVideoRect();
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::SetVideoRect()
 {
   CSingleLock lock (m_critSection);
   if(!m_is_open)
     return;
+
+  //--------------------------------------------------------------------
+  // SLOCUM - LOCK TO 'FILL' ASPECT MODE SINCE I'M DOING MY OWN HANDLING OF ASPECT MODE NOW
+  // 0 = FILL   1 = LETTERBOX   2 = NATURAL?
+  int newAspectMode = 0;
+  // int newAspectMode = m_config.aspectMode;
+  //--------------------------------------------------------------------
 
   OMX_ERRORTYPE omx_err;
   OMX_CONFIG_DISPLAYREGIONTYPE configDisplay;
@@ -837,27 +894,40 @@ void COMXVideo::SetVideoRect()
   configDisplay.nPortIndex = m_omx_render.GetInputPort();
 
   configDisplay.set        = (OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_NOASPECT | OMX_DISPLAY_SET_MODE | OMX_DISPLAY_SET_SRC_RECT | OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_PIXEL);
-  configDisplay.noaspect   = m_config.aspectMode == 3 ? OMX_TRUE : OMX_FALSE;
-  configDisplay.mode       = m_config.aspectMode == 2 ? OMX_DISPLAY_MODE_FILL : OMX_DISPLAY_MODE_LETTERBOX;
+  configDisplay.noaspect   = newAspectMode == 3 ? OMX_TRUE : OMX_FALSE;
+  configDisplay.mode       = newAspectMode == 2 ? OMX_DISPLAY_MODE_FILL : OMX_DISPLAY_MODE_LETTERBOX;
 
   configDisplay.src_rect.x_offset   = (int)(m_config.src_rect.x1+0.5f);
   configDisplay.src_rect.y_offset   = (int)(m_config.src_rect.y1+0.5f);
   configDisplay.src_rect.width      = (int)(m_config.src_rect.Width()+0.5f);
   configDisplay.src_rect.height     = (int)(m_config.src_rect.Height()+0.5f);
 
+
+  /*printf( "''' SOURCE = {%f %f %f %f} DEST = {%f %f %f %f} \n", 
+              m_config.src_rect.x1, m_config.src_rect.y1, m_config.src_rect.Width(), m_config.src_rect.Height(),
+              m_config.dst_rect.x1, m_config.dst_rect.y1, m_config.dst_rect.Width(), m_config.dst_rect.Height()  ); //*/
+
   if (m_config.dst_rect.x2 > m_config.dst_rect.x1 && m_config.dst_rect.y2 > m_config.dst_rect.y1) {
     configDisplay.set        = (OMX_DISPLAYSETTYPE)(configDisplay.set | OMX_DISPLAY_SET_DEST_RECT);
     configDisplay.fullscreen = OMX_FALSE;
 
-    if (m_config.aspectMode != 1 && m_config.aspectMode != 2 && m_config.aspectMode != 3) {
+    if (newAspectMode != 1 && newAspectMode != 2 && newAspectMode != 3) {
       configDisplay.noaspect = OMX_TRUE;
     }
 
     configDisplay.dest_rect.x_offset  = (int)(m_config.dst_rect.x1+0.5f);
     configDisplay.dest_rect.y_offset  = (int)(m_config.dst_rect.y1+0.5f);
     configDisplay.dest_rect.width     = (int)(m_config.dst_rect.Width()+0.5f);
-    configDisplay.dest_rect.height    = (int)(m_config.dst_rect.Height()+0.5f);
+    configDisplay.dest_rect.height    = (int)(m_config.dst_rect.Height()+0.5f); //*/
+
+
+    /*configDisplay.dest_rect.x_offset  = (int)(m_config.src_rect.x1+0.5f);
+    configDisplay.dest_rect.y_offset  = (int)(m_config.src_rect.y1+0.5f);
+    configDisplay.dest_rect.width     = (int)(m_config.src_rect.Width()+0.5f);
+    configDisplay.dest_rect.height    = (int)(m_config.src_rect.Height()+0.5f); //*/
+
   } else {
+    printf( "''' FULLSCREEN \n" );
     configDisplay.fullscreen = OMX_TRUE;
   }
 
@@ -876,6 +946,7 @@ void COMXVideo::SetVideoRect()
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::SetAlpha(int alpha)
 {
   CSingleLock lock (m_critSection);
@@ -902,12 +973,14 @@ void COMXVideo::SetAlpha(int alpha)
 
 
 
+///////////////////////////////////////////////////////////////////////////////
 int COMXVideo::GetInputBufferSize()
 {
   CSingleLock lock (m_critSection);
   return m_omx_decoder.GetInputBufferSize();
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void COMXVideo::SubmitEOS()
 {
   CSingleLock lock (m_critSection);
@@ -943,6 +1016,7 @@ void COMXVideo::SubmitEOS()
   CLog::Log(LOGINFO, "%s::%s", CLASSNAME, __func__);
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool COMXVideo::IsEOS()
 {
   CSingleLock lock (m_critSection);

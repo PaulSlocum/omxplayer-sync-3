@@ -18,14 +18,14 @@ if you modify the structure of README.md!
 ## COMPILING
 
 Run this script which will install build dependency packages,
-including g++, and update firmware
+including g++ 4.7, and update firmware
 
     ./prepare-native-raspbian.sh
 
 Build with
 
     make ffmpeg
-    make -j$(nproc)
+    make
 
 Install with
     
@@ -327,7 +327,8 @@ Skip to the previous chapter.
 ##### Play
 
 Play the video. If the video is playing, it has no effect, if it is
-paused it will play from current position.
+paused it will play from current position and if it is stopped it will
+play from the beginning.
 
    Params       |   Type
 :-------------: | -------
@@ -353,7 +354,7 @@ paused it will start playing.
 
 ##### Stop
 
-Stops the video. This has the same effect as Quit (terminates the omxplayer instance).
+Stops the video.
 
    Params       |   Type
 :-------------: | -------

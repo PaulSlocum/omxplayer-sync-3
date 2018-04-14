@@ -32,6 +32,8 @@
 
 #include "linux/XMemUtils.h"
 
+////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXPlayerAudio::OMXPlayerAudio()
 {
   m_open          = false;
@@ -55,6 +57,8 @@ OMXPlayerAudio::OMXPlayerAudio()
   pthread_mutex_init(&m_lock_decoder, NULL);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXPlayerAudio::~OMXPlayerAudio()
 {
   Close();
@@ -65,30 +69,35 @@ OMXPlayerAudio::~OMXPlayerAudio()
   pthread_mutex_destroy(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::Lock()
 {
   if(m_config.use_thread)
     pthread_mutex_lock(&m_lock);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::UnLock()
 {
   if(m_config.use_thread)
     pthread_mutex_unlock(&m_lock);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::LockDecoder()
 {
   if(m_config.use_thread)
     pthread_mutex_lock(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::UnLockDecoder()
 {
   if(m_config.use_thread)
     pthread_mutex_unlock(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerAudio::Open(OMXClock *av_clock, const OMXAudioConfig &config, OMXReader *omx_reader)
 {
   if(ThreadHandle())
@@ -133,6 +142,7 @@ bool OMXPlayerAudio::Open(OMXClock *av_clock, const OMXAudioConfig &config, OMXR
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerAudio::Close()
 {
   m_bAbort  = true;
@@ -164,6 +174,11 @@ bool OMXPlayerAudio::Close()
 }
 
 
+////////////////////////////////////////////////////////////////////////////////////////
+// CALLED FROM THE Process() THREAD LOOP TO DECODE AUDIO PACKETS.
+// THIS USES AN OBJECT FROM THE COMXAudioCodecOMX CLASS TO SOFTWARE DECODE PACKETS 
+// THROUGH FFMPEG IF NEEDED, THEN ADDS THEM TO THE OMX COMPONENT CHAIN'S PACKET QUEUE.
+// WHEN HARDWARE DECODING OR PASSTHROUGH IS USED, THEN THE FFMPEG DECODE IS SKIPPED.
 bool OMXPlayerAudio::Decode(OMXPacket *pkt)
 {
   if(!pkt)
@@ -187,6 +202,7 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
     new_bitrate = old_bitrate = 0;
   }
 
+  // HANDLE CHANGES TO THE AUDIO FORMAT...(?)
   // for passthrough we only care about the codec and the samplerate
   bool minor_change = channels                 != m_config.hints.channels ||
                       pkt->hints.bitspersample != m_config.hints.bitspersample ||
@@ -196,8 +212,8 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
      pkt->hints.samplerate     != m_config.hints.samplerate ||
      (!m_passthrough && minor_change))
   {
-    printf("C : %d %d %d %d %d\n", m_config.hints.codec, m_config.hints.channels, m_config.hints.samplerate, m_config.hints.bitrate, m_config.hints.bitspersample);
-    printf("N : %d %d %d %d %d\n", pkt->hints.codec, channels, pkt->hints.samplerate, pkt->hints.bitrate, pkt->hints.bitspersample);
+    //printf("C : %d %d %d %d %d\n", m_config.hints.codec, m_config.hints.channels, m_config.hints.samplerate, m_config.hints.bitrate, m_config.hints.bitspersample);
+    //printf("N : %d %d %d %d %d\n", pkt->hints.codec, channels, pkt->hints.samplerate, pkt->hints.bitrate, pkt->hints.bitspersample);
 
 
     CloseDecoder();
@@ -224,11 +240,13 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
   const uint8_t *data_dec = pkt->data;
   int            data_len = pkt->size;
 
+  // IF NOT PASSTHROUGH AND NOT HARDWARE DECODE...
   if(!m_passthrough && !m_hw_decode)
   {
     double dts = pkt->dts, pts=pkt->pts;
     while(data_len > 0)
     {
+      // DECODE WITH FFMPEG..
       int len = m_pAudioCodec->Decode((BYTE *)data_dec, data_len, dts, pts);
       if( (len < 0) || (len >  data_len) )
       {
@@ -239,6 +257,7 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
       data_dec+= len;
       data_len -= len;
 
+      // GET DECODED DATA FROM FFMPEG...
       uint8_t *decoded;
       int decoded_size = m_pAudioCodec->GetData(&decoded, dts, pts);
 
@@ -253,14 +272,15 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
 
       int ret = 0;
 
+      // PASS THE DECODED AUDIO ON TO THE OMX COMPONENT CHAIN
       ret = m_decoder->AddPackets(decoded, decoded_size, dts, pts, m_pAudioCodec->GetFrameSize());
       if(ret != decoded_size)
       {
-        printf("error ret %d decoded_size %d\n", ret, decoded_size);
+        printf("(OMXPLAYER) error ret %d decoded_size %d\n", ret, decoded_size);
       }
     }
   }
-  else
+  else // ELSE - EITHER PASSTHOUGH OR HARDWARE DECODE, SO FFMPEG DECODE NOT NEEDED...
   {
     while((int) m_decoder->GetSpace() < pkt->size)
     {
@@ -268,16 +288,22 @@ bool OMXPlayerAudio::Decode(OMXPacket *pkt)
       if(m_flush_requested) return true;
     }
 
+    // GIVE PACKETS DIRECTLY TO OMX COMPONENT CHAIN
     m_decoder->AddPackets(pkt->data, pkt->size, pkt->dts, pkt->pts, 0);
   }
 
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// THREADED LOOP THAT CONTINUALLY FEEDS AUDIO PACKETS TO THE DECODER.
+// THIS FUNCTION IS CALLED FROM THE SUPERCLASS OMXThread WIHIN A THREAD...  
 void OMXPlayerAudio::Process()
 {
   OMXPacket *omx_pkt = NULL;
 
+  // ENDLESS LOOP RUNNING IN THREAD...
+  // LOOP IS BROKEN ON m_bStop OR m_bAbort...
   while(true)
   {
     Lock();
@@ -289,15 +315,18 @@ void OMXPlayerAudio::Process()
       UnLock();
       break;
     }
-
+  
+    // IF FLUSH SIGNAL...
     if(m_flush && omx_pkt)
     {
+      // FLUSH...
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
       m_flush = false;
     }
     else if(!omx_pkt && !m_packets.empty())
     {
+      // ELSE - GET ANOTHER PACKET FROM THE PACKET QUEUE...
       omx_pkt = m_packets.front();
       m_cached_size -= omx_pkt->size;
       m_packets.pop_front();
@@ -305,24 +334,29 @@ void OMXPlayerAudio::Process()
     UnLock();
     
     LockDecoder();
+    // IF FLUSH SIGNAL (AGAIN)...
     if(m_flush && omx_pkt)
     {
+      // FLUSH...
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
       m_flush = false;
     }
-    else if(omx_pkt && Decode(omx_pkt))
+    else if(omx_pkt && Decode(omx_pkt)) // <-- ELSE ** DECODE THE PACKET **
     {
+      // FREE THE PACKET...
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
     }
     UnLockDecoder();
-  }
-
+    
+  } // WHILE LOOP ---/\
+  
   if(omx_pkt)
     OMXReader::FreePacket(omx_pkt);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::Flush()
 {
   m_flush_requested = true;
@@ -346,6 +380,8 @@ void OMXPlayerAudio::Flush()
   UnLock();
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// ADDS A PACKET TO THE PACKET QUEUE.
 bool OMXPlayerAudio::AddPacket(OMXPacket *pkt)
 {
   bool ret = false;
@@ -369,6 +405,8 @@ bool OMXPlayerAudio::AddPacket(OMXPacket *pkt)
   return ret;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// 
 bool OMXPlayerAudio::OpenAudioCodec()
 {
   m_pAudioCodec = new COMXAudioCodecOMX();
@@ -382,6 +420,7 @@ bool OMXPlayerAudio::OpenAudioCodec()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::CloseAudioCodec()
 {
   if(m_pAudioCodec)
@@ -389,6 +428,7 @@ void OMXPlayerAudio::CloseAudioCodec()
   m_pAudioCodec = NULL;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerAudio::IsPassthrough(COMXStreamInfo hints)
 {
   if(m_config.device == "omx:local")
@@ -412,6 +452,9 @@ bool OMXPlayerAudio::IsPassthrough(COMXStreamInfo hints)
   return passthrough;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// CREATE AND SET UP THE COMXAudio OBJECT THAT CONTAINS THE CHAIN OF OMX COMPONENTS
+// AND TUNNELS.
 bool OMXPlayerAudio::OpenDecoder()
 {
   bool bAudioRenderOpen = false;
@@ -431,24 +474,26 @@ bool OMXPlayerAudio::OpenDecoder()
 
   m_codec_name = m_omx_reader->GetCodecName(OMXSTREAM_AUDIO);
   
-  if(!bAudioRenderOpen)
+  // IF DECODER FAILED TO INITIALIZE...
+  if(!bAudioRenderOpen) // <-- WHY IS THIS CALLED RENDER?? I ASSUME THIS IS JUST BAD NAMING AND IT'S REALLY REFERRING TO THE DECODER..
   {
     delete m_decoder; 
     m_decoder = NULL;
     return false;
   }
-  else
+  else // ELSE - DECODER DID INITIALIZE OKAY...
   {
-    if(m_passthrough)
+    // DEBUG DISPLAY PRINTF TO SHOW CODEC INFO AND IF IT'S PASSTHROUGH...
+    /*if(m_passthrough)
     {
-      printf("Audio codec %s passthrough channels %d samplerate %d bitspersample %d\n",
+      printf("(OMXPLAYER) Audio codec %s passthrough channels %d samplerate %d bitspersample %d\n",
         m_codec_name.c_str(), m_config.hints.channels, m_config.hints.samplerate, m_config.hints.bitspersample);
     }
     else
     {
-      printf("Audio codec %s channels %d samplerate %d bitspersample %d\n",
+      printf("(OMXPLAYER) Audio codec %s channels %d samplerate %d bitspersample %d\n",
         m_codec_name.c_str(), m_config.hints.channels, m_config.hints.samplerate, m_config.hints.bitspersample);
-    }
+    } //*/
   }
   // setup current volume settings
   m_decoder->SetVolume(m_CurrentVolume);
@@ -458,6 +503,7 @@ bool OMXPlayerAudio::OpenDecoder()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerAudio::CloseDecoder()
 {
   if(m_decoder)
@@ -466,6 +512,7 @@ bool OMXPlayerAudio::CloseDecoder()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 double OMXPlayerAudio::GetDelay()
 {
   if(m_decoder)
@@ -474,6 +521,7 @@ double OMXPlayerAudio::GetDelay()
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 double OMXPlayerAudio::GetCacheTime()
 {
   if(m_decoder)
@@ -482,6 +530,7 @@ double OMXPlayerAudio::GetCacheTime()
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 double OMXPlayerAudio::GetCacheTotal()
 {
   if(m_decoder)
@@ -490,12 +539,14 @@ double OMXPlayerAudio::GetCacheTotal()
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerAudio::SubmitEOS()
 {
   if(m_decoder)
     m_decoder->SubmitEOS();
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerAudio::IsEOS()
 {
   return m_packets.empty() && (!m_decoder || m_decoder->IsEOS());

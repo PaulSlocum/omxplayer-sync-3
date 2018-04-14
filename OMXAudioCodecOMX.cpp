@@ -31,6 +31,8 @@
 #define AUDIO_DECODE_OUTPUT_BUFFER (32*1024)
 static const char rounded_up_channels_shift[] = {0,0,1,2,2,3,3,3,3};
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 COMXAudioCodecOMX::COMXAudioCodecOMX()
 {
   m_pBufferOutput = NULL;
@@ -50,6 +52,8 @@ COMXAudioCodecOMX::COMXAudioCodecOMX()
   m_desiredSampleFormat = AV_SAMPLE_FMT_NONE;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 COMXAudioCodecOMX::~COMXAudioCodecOMX()
 {
   m_dllAvUtil.av_free(m_pBufferOutput);
@@ -59,6 +63,7 @@ COMXAudioCodecOMX::~COMXAudioCodecOMX()
   Dispose();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 bool COMXAudioCodecOMX::Open(COMXStreamInfo &hints, enum PCMLayout layout)
 {
   AVCodec* pCodec;
@@ -133,6 +138,7 @@ bool COMXAudioCodecOMX::Open(COMXStreamInfo &hints, enum PCMLayout layout)
   return true;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void COMXAudioCodecOMX::Dispose()
 {
   if (m_pFrame1) m_dllAvUtil.av_free(m_pFrame1);
@@ -158,6 +164,7 @@ void COMXAudioCodecOMX::Dispose()
   m_bGotFrame = false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::Decode(BYTE* pData, int iSize, double dts, double pts)
 {
   int iBytesUsed, got_frame;
@@ -202,6 +209,7 @@ int COMXAudioCodecOMX::Decode(BYTE* pData, int iSize, double dts, double pts)
   return iBytesUsed;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::GetData(BYTE** dst, double &dts, double &pts)
 {
   if (!m_bGotFrame)
@@ -294,6 +302,7 @@ int COMXAudioCodecOMX::GetData(BYTE** dst, double &dts, double &pts)
   return 0;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void COMXAudioCodecOMX::Reset()
 {
   if (m_pCodecContext) m_dllAvCodec.avcodec_flush_buffers(m_pCodecContext);
@@ -301,6 +310,7 @@ void COMXAudioCodecOMX::Reset()
   m_iBufferOutputUsed = 0;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::GetChannels()
 {
   if (!m_pCodecContext)
@@ -308,6 +318,7 @@ int COMXAudioCodecOMX::GetChannels()
   return m_pCodecContext->channels;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::GetSampleRate()
 {
   if (!m_pCodecContext)
@@ -315,6 +326,7 @@ int COMXAudioCodecOMX::GetSampleRate()
   return m_pCodecContext->sample_rate;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::GetBitsPerSample()
 {
   if (!m_pCodecContext)
@@ -322,6 +334,7 @@ int COMXAudioCodecOMX::GetBitsPerSample()
   return m_pCodecContext->sample_fmt == AV_SAMPLE_FMT_S16 ? 16 : 32;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int COMXAudioCodecOMX::GetBitRate()
 {
   if (!m_pCodecContext)
@@ -329,6 +342,7 @@ int COMXAudioCodecOMX::GetBitRate()
   return m_pCodecContext->bit_rate;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 static unsigned count_bits(int64_t value)
 {
   unsigned bits = 0;
@@ -337,6 +351,7 @@ static unsigned count_bits(int64_t value)
   return bits;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 uint64_t COMXAudioCodecOMX::GetChannelMap()
 {
   uint64_t layout;

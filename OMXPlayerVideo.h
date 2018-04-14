@@ -18,6 +18,15 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//***************************************************************************************
+//
+// CLASS OMXPlayerVideo (SUBCLASS OF OMXThread)
+//
+// THIS CLASS APPEARS TO BE A WRAPPER FOR SLIGHTLY LOWER LEVEL "COMXVideo" CLASS.
+// NOT TOTALLY SURE WHY THIS IS NECESSARY?
+// 
+//***************************************************************************************
+
 
 #ifndef _OMX_PLAYERVIDEO_H_
 #define _OMX_PLAYERVIDEO_H_

@@ -1,3 +1,5 @@
+include Makefile.include
+
 CFLAGS=-D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS -DTARGET_POSIX -DTARGET_LINUX -fPIC -DPIC -D_REENTRANT -D_HAVE_SBRK -D_LARGEFILE64_SOURCE -DHAVE_CMAKE_CONFIG -DHAVE_VMCS_CONFIG -D_REENTRANT -DUSE_VCHIQ_ARM -DVCHI_BULK_ALIGN=1 -DVCHI_BULK_GRANULARITY=1 -DEGL_SERVER_DISPMANX -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D__VIDEOCORE4__ -DGRAPHICS_X_VG=1 -U_FORTIFY_SOURCE -Wall -DHAVE_OMXLIB -DUSE_EXTERNAL_FFMPEG  -DHAVE_LIBAVCODEC_AVCODEC_H -DHAVE_LIBAVUTIL_MEM_H -DHAVE_LIBAVUTIL_AVUTIL_H -DHAVE_LIBAVFORMAT_AVFORMAT_H -DHAVE_LIBAVFILTER_AVFILTER_H -DOMX -DOMX_SKIP64BIT
 
 WORK=$(PWD)
@@ -8,11 +10,11 @@ all: checkout configure compile
 .PHONY : copy
 copy:
 	find ffmpeg -name '*.so*' -exec cp {} . \;
-	$(HOST)-strip *.so*
+	strip *.so*
 
 .PHONY : compile
 compile: 
-	+$(MAKE) -j$(shell nproc) -C ffmpeg
+	+$(MAKE) -C ffmpeg
 
 .PHONY : configure
 configure: 
@@ -20,7 +22,7 @@ configure:
 	CFLAGS="$(CFLAGS) ${INCLUDES}" \
 	LDFLAGS="" \
   ./configure \
-			--extra-cflags="-mfpu=vfp -mfloat-abi=hard -mno-apcs-stack-check -mstructure-size-boundary=32 -mno-sched-prolog" \
+			--extra-cflags="-mfpu=vfp -mfloat-abi=$(FLOAT) -mno-apcs-stack-check -mstructure-size-boundary=32 -mno-sched-prolog" \
 			--enable-shared \
 			--disable-static \
 			--arch=arm \
@@ -39,8 +41,8 @@ configure:
 			--enable-gpl \
 			--enable-version3 \
 			--enable-protocols \
-			--enable-libsmbclient \
-			--enable-libssh \
+			--disable-libsmbclient \
+			--disable-libssh \
 			--enable-nonfree \
 			--enable-openssl \
 			--enable-pthreads \
@@ -238,7 +240,8 @@ configure:
 			--disable-decoder=xbin \
 			--disable-decoder=idf \
 			--disable-decoder=hevc \
-			--enable-decoder=opus
+			--enable-decoder=opus \
+
 
 .PHONY : clean
 clean:
@@ -246,10 +249,10 @@ clean:
 
 .PHONY : checkout
 checkout:
-	git clone git://source.ffmpeg.org/ffmpeg ffmpeg -b release/3.3 --depth=1
+	git clone git://source.ffmpeg.org/ffmpeg ffmpeg -b release/3.1 --depth=1
 
 .PHONY : install
 install:
-	cd ffmpeg; make -j9 DESTDIR="$(WORK)/ffmpeg_compiled" install
-	$(HOST)-strip ffmpeg_compiled/usr/local/lib/*.so
+	cd ffmpeg; make DESTDIR="$(WORK)/ffmpeg_compiled" install
+	strip ffmpeg_compiled/usr/local/lib/*.so
 

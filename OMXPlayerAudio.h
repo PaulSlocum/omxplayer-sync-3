@@ -18,6 +18,16 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//***************************************************************************************
+//
+// CLASS OMXPlayerAudio (SUBCLASS OF OMXThread)
+//
+// THIS CLASS APPEARS TO BE A WRAPPER FOR SLIGHTLY LOWER LEVEL "COMXAudio" CLASS.
+//
+// RUNS "Process()", A THREADED LOOP THAT CONTINUALLY FEEDS AUDIO PACKETS TO THE DECODER.
+// 
+//***************************************************************************************
+
 
 #ifndef _OMX_PLAYERAUDIO_H_
 #define _OMX_PLAYERAUDIO_H_

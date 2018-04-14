@@ -33,6 +33,8 @@
 
 #include "linux/XMemUtils.h"
 
+////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXPlayerVideo::OMXPlayerVideo()
 {
   m_open          = false;
@@ -53,6 +55,8 @@ OMXPlayerVideo::OMXPlayerVideo()
   pthread_mutex_init(&m_lock_decoder, NULL);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXPlayerVideo::~OMXPlayerVideo()
 {
   Close();
@@ -63,30 +67,37 @@ OMXPlayerVideo::~OMXPlayerVideo()
   pthread_mutex_destroy(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::Lock()
 {
   if(m_config.use_thread)
     pthread_mutex_lock(&m_lock);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::UnLock()
 {
   if(m_config.use_thread)
     pthread_mutex_unlock(&m_lock);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::LockDecoder()
 {
   if(m_config.use_thread)
     pthread_mutex_lock(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::UnLockDecoder()
 {
   if(m_config.use_thread)
     pthread_mutex_unlock(&m_lock_decoder);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// SETS UP DLL (?) AND THEN CALLS OpenDecoder() WHICH SETS UP m_decoder OBJECT THAT 
+// CONTAINS COMPONENT AND TUNNEL CHAIN FOR VIDEO DECODING AND RENDERING.
 bool OMXPlayerVideo::Open(OMXClock *av_clock, const OMXVideoConfig &config)
 {
   if (!m_dllAvUtil.Load() || !m_dllAvCodec.Load() || !m_dllAvFormat.Load() || !av_clock)
@@ -121,6 +132,7 @@ bool OMXPlayerVideo::Open(OMXClock *av_clock, const OMXVideoConfig &config)
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerVideo::Reset()
 {
   // Quick reset of internal state back to a default that is ready to play from
@@ -145,6 +157,7 @@ bool OMXPlayerVideo::Reset()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerVideo::Close()
 {
   m_bAbort  = true;
@@ -174,21 +187,26 @@ bool OMXPlayerVideo::Close()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::SetAlpha(int alpha)
 {
   m_decoder->SetAlpha(alpha);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::SetVideoRect(const CRect& SrcRect, const CRect& DestRect)
 {
   m_decoder->SetVideoRect(SrcRect, DestRect);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::SetVideoRect(int aspectMode)
 {
   m_decoder->SetVideoRect(aspectMode);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// DECODES A PACKET USING THE COMXVideo OBJECT'S OMX COMPONENT CHAIN.
 bool OMXPlayerVideo::Decode(OMXPacket *pkt)
 {
   if(!pkt)
@@ -206,21 +224,29 @@ bool OMXPlayerVideo::Decode(OMXPacket *pkt)
   if(pts != DVD_NOPTS_VALUE)
     m_iCurrentPts = pts;
 
+  // WAIT UNTIL DECODER HAS ENOUGH FREE SPACE FOR PACKET...
   while((int) m_decoder->GetFreeSpace() < pkt->size)
   {
     OMXClock::OMXSleep(10);
-    if(m_flush_requested) return true;
+    if(m_flush_requested) return true; // ABORT IF FLUSH REQUESTED ---------->
   }
 
   CLog::Log(LOGINFO, "CDVDPlayerVideo::Decode dts:%.0f pts:%.0f cur:%.0f, size:%d", pkt->dts, pkt->pts, m_iCurrentPts, pkt->size);
+  
+  // ADD PACKET TO DECODER CHAIN
   m_decoder->Decode(pkt->data, pkt->size, dts, pts);
   return true;
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////
+// ENDLESS THREADED LOOP THAT FEEDS PACKET TO THE Decode() METHOD ABOVE.
+// THIS FUNCTION IS CALLED FROM THE SUPERCLASS OMXThread IN A THREAD...  
 void OMXPlayerVideo::Process()
 {
   OMXPacket *omx_pkt = NULL;
 
+  // ENDLESS LOOP...
   while(true)
   {
     Lock();
@@ -233,39 +259,48 @@ void OMXPlayerVideo::Process()
       break;
     }
 
+    // IF FLUSH SIGNAL...
     if(m_flush && omx_pkt)
     {
+      // FLUSH
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
       m_flush = false;
     }
-    else if(!omx_pkt && !m_packets.empty())
+    else if(!omx_pkt && !m_packets.empty()) // ELSE - IF NO PACKET...
     {
-      omx_pkt = m_packets.front();
+      // GET THE FIRST PACKET FROM THE QUEUE...
+      omx_pkt = m_packets.front(); 
       m_cached_size -= omx_pkt->size;
       m_packets.pop_front();
     }
     UnLock();
 
     LockDecoder();
+    // IF FLUSH SIGNAL...
     if(m_flush && omx_pkt)
     {
+      // FLUSH...
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
       m_flush = false;
     }
-    else if(omx_pkt && Decode(omx_pkt))
+    else if(omx_pkt && Decode(omx_pkt)) // <-- ELSE - ** DECODE PACKET **
     {
+      // FREE DECODED PACKET
       OMXReader::FreePacket(omx_pkt);
       omx_pkt = NULL;
     }
     UnLockDecoder();
-  }
+    
+  } // END OF WHILE ______/\_
 
   if(omx_pkt)
     OMXReader::FreePacket(omx_pkt);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// FLUSH PACKET QUEUE AND Reset() DECODER CHAIN.
 void OMXPlayerVideo::Flush()
 {
   m_flush_requested = true;
@@ -287,6 +322,8 @@ void OMXPlayerVideo::Flush()
   UnLock();
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// ADD PACKET TO THE PACKET QUEUE.
 bool OMXPlayerVideo::AddPacket(OMXPacket *pkt)
 {
   bool ret = false;
@@ -311,6 +348,9 @@ bool OMXPlayerVideo::AddPacket(OMXPacket *pkt)
 }
 
 
+////////////////////////////////////////////////////////////////////////////////////////
+// CREATES A NEW COMXVideo OBJECT WHICH CONTAINS THE CHAIN OF OMX COMPONENTS AND 
+// TUNNELS FOR DECODING AND RENDERING.
 bool OMXPlayerVideo::OpenDecoder()
 {
   if (m_config.hints.fpsrate && m_config.hints.fpsscale)
@@ -326,21 +366,27 @@ bool OMXPlayerVideo::OpenDecoder()
 
   m_frametime = (double)DVD_TIME_BASE / m_fps;
 
+  // CREATE NEW COMXVideo OBJECT...
   m_decoder = new COMXVideo();
   if(!m_decoder->Open(m_av_clock, m_config))
   {
+    // FAILED TO OPEN DECODER
     CloseDecoder();
     return false;
   }
   else
-  {
-    printf("Video codec %s width %d height %d profile %d fps %f\n",
-        m_decoder->GetDecoderName().c_str() , m_config.hints.width, m_config.hints.height, m_config.hints.profile, m_fps);
+  { 
+    //=======================================================================================================
+    // DEBUG OUTPUT SHOWING THE NEWLY CREATED VIDEO DECODER
+    /*printf("Video codec %s width %d height %d profile %d fps %f\n",
+        m_decoder->GetDecoderName().c_str() , m_config.hints.width, m_config.hints.height, m_config.hints.profile, m_fps); //*/
+    //=======================================================================================================
   }
 
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerVideo::CloseDecoder()
 {
   if(m_decoder)
@@ -349,6 +395,7 @@ bool OMXPlayerVideo::CloseDecoder()
   return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 int  OMXPlayerVideo::GetDecoderBufferSize()
 {
   if(m_decoder)
@@ -357,6 +404,7 @@ int  OMXPlayerVideo::GetDecoderBufferSize()
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 int  OMXPlayerVideo::GetDecoderFreeSpace()
 {
   if(m_decoder)
@@ -365,12 +413,14 @@ int  OMXPlayerVideo::GetDecoderFreeSpace()
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerVideo::SubmitEOS()
 {
   if(m_decoder)
     m_decoder->SubmitEOS();
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerVideo::IsEOS()
 {
   if(!m_decoder)

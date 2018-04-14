@@ -16,6 +16,20 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+//*********************************************************************************
+//
+// ((PART IF THE CODE FROM THIS FILE IS CURRENTLY IN omxplayerB.cpp FOR MANAGEABILITY))
+//
+// INCLUDES MAIN() LOOP AND CODE TO HANDLE COMMAND LINE ARGUMENTS.
+//
+// CREATES THE MASTER OMXClock, OMXReader, AND OMXControl OBJECTS.
+//
+// CREATES OMXPlayerVideo, OMXPlayerAudio, AND OMXPlayerSubtitles CLASSES WHICH 
+// ARE WRAPPERS FOR COMXVideo, COMXAudio, and COMXSubtitles CLASSES THAT OPERATE
+// THE CHAIN OF OMX COMPONENTS FOR RENDERING.
+//
+//*********************************************************************************
+
 
 #include <stdio.h>
 #include <signal.h>
@@ -64,6 +78,8 @@ extern "C" {
 
 #include "version.h"
 
+// TRICKPLAY DEFINED HERE**
+// TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/REWIND/FAST FORWARD (NOT NORMAL PLAY)
 // when we repeatedly seek, rather than play continuously
 #define TRICKPLAY(speed) (speed < 0 || speed > 4 * DVD_PLAYSPEED_NORMAL)
 
@@ -71,6 +87,27 @@ extern "C" {
 
 #define DISPLAY_TEXT_SHORT(text) DISPLAY_TEXT(text, 1000)
 #define DISPLAY_TEXT_LONG(text) DISPLAY_TEXT(text, 2000)
+
+#define OFFSCREEN_X1 0    // DEFAULT -- SHOW PRELOADING VIDEO OFF SCREEN
+#define OFFSCREEN_Y1 4000
+#define OFFSCREEN_X2 100
+#define OFFSCREEN_Y2 4100
+//*/
+
+/*#define OFFSCREEN_X1 1300 // DEBUG -- SHOW PRELOADING VIDEO IN CORNER OF SCREEN
+#define OFFSCREEN_Y1 1000
+#define OFFSCREEN_X2 1600
+#define OFFSCREEN_Y2 1200
+//*/
+
+/*#define OFFSCREEN_X1 0 // DEBUG -- SHOW PRELOADING VIDEO IN CORNER OF SCREEN
+#define OFFSCREEN_Y1 0
+#define OFFSCREEN_X2 300
+#define OFFSCREEN_Y2 300
+//*/
+
+// ----------------------------------------------------------------------------------------------
+// GLOBAL VARIABLES 
 
 typedef enum {CONF_FLAGS_FORMAT_NONE, CONF_FLAGS_FORMAT_SBS, CONF_FLAGS_FORMAT_TB, CONF_FLAGS_FORMAT_FP } FORMAT_3D_T;
 enum PCMChannels  *m_pChannelMap        = NULL;
@@ -114,832 +151,99 @@ bool              m_has_audio           = false;
 bool              m_has_subtitle        = false;
 bool              m_gen_log             = false;
 bool              m_loop                = false;
+bool              m_seamless_loop       = false; // NEW!!!!!!!!! SLOCUM
+
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// MY OWN GLOBAL VARIABLES - SLOCUM
+#include "../mpUIWindowFrame.h"
+#include "../mpDebugInclude.h"
+std::deque<long long> timeOffsetArray;
+double mediaTimeUSec = 0.0;
+long long mediaTimeOffsetMSec = 0;
+long long videoLength = 0;
+long long playlistStartTimeMSec = 0;
+bool syncEnabled = false;
+long loopCount = 0; // used in OMXReader for seamless looping, should not be used in main loop
+long localLoopCount = 0; // this may be offset from the other loopCount
+CRect storedVideo;
+VideoWallConfig videoWallConfig;
+bool videoPositionChanged = false;
+int sleepDelayMsec = 1;
+long cycleCount = 0; 
+long long pauseTimeMSec = 0;
+bool startPause = false;
+bool startUnpause = false;
+enum TimelineStateEnum { 
+  STATE_STARTUP, 
+  STATE_PRELOADING, 
+  STATE_PRELOADING_PAUSED, 
+  STATE_PLAYING, 
+  STATE_FINISHED_PLAYING, 
+  //STATE_SCHEDULING_DISABLED, 
+  STATE_PRELOAD_SEEK, 
+  //STATE_PRELOAD_SEEK_PAUSE,
+  STATE_PRELOADING_PAUSED_FROM_ZERO,
+  STATE_USER_PAUSING,
+  STATE_USER_PAUSED,
+  STATE_USER_UNPAUSING
+};
+TimelineStateEnum timelineState = STATE_STARTUP;
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+
 
 enum{ERROR=-1,SUCCESS,ONEBYTE};
 
-void sig_handler(int s)
+
+//==========================================================================
+// GET MILLISECONDS - SHOULD BE GLOBALLY USED SO THAT 
+//   I CAN CHANGE THE TIME ACQUISITION METHOD IF NEEDED
+long long getCurrentTimeMSec()
 {
-  if (s==SIGINT && !g_abort)
-  {
-     signal(SIGINT, SIG_DFL);
-     g_abort = true;
-     return;
-  }
-  signal(SIGABRT, SIG_DFL);
-  signal(SIGSEGV, SIG_DFL);
-  signal(SIGFPE, SIG_DFL);
-  if (NULL != m_keyboard)
-  {
-     m_keyboard->Close();
-  }
-  abort();
+	// GOOD VERSION...
+    struct timeval tp;
+    gettimeofday(&tp, NULL);
+    long long mslong = (long long) tp.tv_sec * 1000L + tp.tv_usec / 1000; //get current timestamp in milliseconds
+
+	return( (long long) mslong );
 }
 
-void print_usage()
-{
-  printf(
-#include "help.h"
-  );
-}
 
-void print_keybindings()
-{
-  printf(
-#include "keys.h"
-  );
-}
 
-void print_version()
-{
-  printf("omxplayer - Commandline multimedia player for the Raspberry Pi\n");
-  printf("        Build date: %s\n", VERSION_DATE);
-  printf("        Version   : %s [%s]\n", VERSION_HASH, VERSION_BRANCH);
-  printf("        Repository: %s\n", VERSION_REPO);
-}
+//-- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- -  -- - -- - -- - -- - -- - -- - -- - -- - 
+//#########################################################################################################################################
+//#########################################################################################################################################
+#include "omxplayerB.cpp"
+//#########################################################################################################################################
+//#########################################################################################################################################
+//-- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- - -- -  -- - -- - -- - -- - -- - -- - -- - -- - 
 
-static void PrintSubtitleInfo()
-{
-  auto count = m_omx_reader.SubtitleStreamCount();
-  size_t index = 0;
+	// main() CONTINUED....
 
-  if(m_has_external_subtitles)
-  {
-    ++count;
-    if(!m_player_subtitles.GetUseExternalSubtitles())
-      index = m_player_subtitles.GetActiveStream() + 1;
-  }
-  else if(m_has_subtitle)
-  {
-      index = m_player_subtitles.GetActiveStream();
-  }
+	// ADDED TO HOPEFULLY OVERLAY SDL GRAPHICS...
+  m_config_video.layer = 10005;
 
-  printf("Subtitle count: %d, state: %s, index: %d, delay: %d\n",
-         count,
-         m_has_subtitle && m_player_subtitles.GetVisible() ? " on" : "off",
-         index+1,
-         m_has_subtitle ? m_player_subtitles.GetDelay() : 0);
-}
 
-static void FlushStreams(double pts);
+#pragma mark OTHER SETUP  ~  ~  ~  ~  ~  ~  ~  ~  
 
-static void SetSpeed(int iSpeed)
-{
-  if(!m_av_clock)
-    return;
-
-  m_omx_reader.SetSpeed(iSpeed);
-
-  // flush when in trickplay mode
-  if (TRICKPLAY(iSpeed) || TRICKPLAY(m_av_clock->OMXPlaySpeed()))
-    FlushStreams(DVD_NOPTS_VALUE);
-
-  m_av_clock->OMXSetSpeed(iSpeed);
-  m_av_clock->OMXSetSpeed(iSpeed, true, true);
-}
-
-static float get_display_aspect_ratio(HDMI_ASPECT_T aspect)
-{
-  float display_aspect;
-  switch (aspect) {
-    case HDMI_ASPECT_4_3:   display_aspect = 4.0/3.0;   break;
-    case HDMI_ASPECT_14_9:  display_aspect = 14.0/9.0;  break;
-    case HDMI_ASPECT_16_9:  display_aspect = 16.0/9.0;  break;
-    case HDMI_ASPECT_5_4:   display_aspect = 5.0/4.0;   break;
-    case HDMI_ASPECT_16_10: display_aspect = 16.0/10.0; break;
-    case HDMI_ASPECT_15_9:  display_aspect = 15.0/9.0;  break;
-    case HDMI_ASPECT_64_27: display_aspect = 64.0/27.0; break;
-    default:                display_aspect = 16.0/9.0;  break;
-  }
-  return display_aspect;
-}
-
-static float get_display_aspect_ratio(SDTV_ASPECT_T aspect)
-{
-  float display_aspect;
-  switch (aspect) {
-    case SDTV_ASPECT_4_3:  display_aspect = 4.0/3.0;  break;
-    case SDTV_ASPECT_14_9: display_aspect = 14.0/9.0; break;
-    case SDTV_ASPECT_16_9: display_aspect = 16.0/9.0; break;
-    default:               display_aspect = 4.0/3.0;  break;
-  }
-  return display_aspect;
-}
-
-static void FlushStreams(double pts)
-{
-  m_av_clock->OMXStop();
-  m_av_clock->OMXPause();
-
-  if(m_has_video)
-    m_player_video.Flush();
-
-  if(m_has_audio)
-    m_player_audio.Flush();
-
-  if(pts != DVD_NOPTS_VALUE)
-    m_av_clock->OMXMediaTime(pts);
-
-  if(m_has_subtitle)
-    m_player_subtitles.Flush();
-
-  if(m_omx_pkt)
-  {
-    m_omx_reader.FreePacket(m_omx_pkt);
-    m_omx_pkt = NULL;
-  }
-}
-
-static void CallbackTvServiceCallback(void *userdata, uint32_t reason, uint32_t param1, uint32_t param2)
-{
-  sem_t *tv_synced = (sem_t *)userdata;
-  switch(reason)
-  {
-  case VC_HDMI_UNPLUGGED:
-    break;
-  case VC_HDMI_STANDBY:
-    break;
-  case VC_SDTV_NTSC:
-  case VC_SDTV_PAL:
-  case VC_HDMI_HDMI:
-  case VC_HDMI_DVI:
-    // Signal we are ready now
-    sem_post(tv_synced);
-    break;
-  default:
-     break;
-  }
-}
-
-void SetVideoMode(int width, int height, int fpsrate, int fpsscale, FORMAT_3D_T is3d)
-{
-  int32_t num_modes = 0;
-  int i;
-  HDMI_RES_GROUP_T prefer_group;
-  HDMI_RES_GROUP_T group = HDMI_RES_GROUP_CEA;
-  float fps = 60.0f; // better to force to higher rate if no information is known
-  uint32_t prefer_mode;
-
-  if (fpsrate && fpsscale)
-    fps = DVD_TIME_BASE / OMXReader::NormalizeFrameduration((double)DVD_TIME_BASE * fpsscale / fpsrate);
-
-  //Supported HDMI CEA/DMT resolutions, preferred resolution will be returned
-  TV_SUPPORTED_MODE_NEW_T *supported_modes = NULL;
-  // query the number of modes first
-  int max_supported_modes = m_BcmHost.vc_tv_hdmi_get_supported_modes_new(group, NULL, 0, &prefer_group, &prefer_mode);
- 
-  if (max_supported_modes > 0)
-    supported_modes = new TV_SUPPORTED_MODE_NEW_T[max_supported_modes];
- 
-  if (supported_modes)
-  {
-    num_modes = m_BcmHost.vc_tv_hdmi_get_supported_modes_new(group,
-        supported_modes, max_supported_modes, &prefer_group, &prefer_mode);
-
-    if(m_gen_log) {
-    CLog::Log(LOGDEBUG, "EGL get supported modes (%d) = %d, prefer_group=%x, prefer_mode=%x\n",
-        group, num_modes, prefer_group, prefer_mode);
-    }
-  }
-
-  TV_SUPPORTED_MODE_NEW_T *tv_found = NULL;
-
-  if (num_modes > 0 && prefer_group != HDMI_RES_GROUP_INVALID)
-  {
-    uint32_t best_score = 1<<30;
-    uint32_t scan_mode = m_NativeDeinterlace;
-
-    for (i=0; i<num_modes; i++)
-    {
-      TV_SUPPORTED_MODE_NEW_T *tv = supported_modes + i;
-      uint32_t score = 0;
-      uint32_t w = tv->width;
-      uint32_t h = tv->height;
-      uint32_t r = tv->frame_rate;
-
-      /* Check if frame rate match (equal or exact multiple) */
-      if(fabs(r - 1.0f*fps) / fps < 0.002f)
-  score += 0;
-      else if(fabs(r - 2.0f*fps) / fps < 0.002f)
-  score += 1<<8;
-      else 
-  score += (1<<16) + (1<<20)/r; // bad - but prefer higher framerate
-
-      /* Check size too, only choose, bigger resolutions */
-      if(width && height) 
-      {
-        /* cost of too small a resolution is high */
-        score += max((int)(width -w), 0) * (1<<16);
-        score += max((int)(height-h), 0) * (1<<16);
-        /* cost of too high a resolution is lower */
-        score += max((int)(w-width ), 0) * (1<<4);
-        score += max((int)(h-height), 0) * (1<<4);
-      } 
-
-      // native is good
-      if (!tv->native) 
-        score += 1<<16;
-
-      // interlace is bad
-      if (scan_mode != tv->scan_mode) 
-        score += (1<<16);
-
-      // wanting 3D but not getting it is a negative
-      if (is3d == CONF_FLAGS_FORMAT_SBS && !(tv->struct_3d_mask & HDMI_3D_STRUCT_SIDE_BY_SIDE_HALF_HORIZONTAL))
-        score += 1<<18;
-      if (is3d == CONF_FLAGS_FORMAT_TB  && !(tv->struct_3d_mask & HDMI_3D_STRUCT_TOP_AND_BOTTOM))
-        score += 1<<18;
-      if (is3d == CONF_FLAGS_FORMAT_FP  && !(tv->struct_3d_mask & HDMI_3D_STRUCT_FRAME_PACKING))
-        score += 1<<18;
-
-      // prefer square pixels modes
-      float par = get_display_aspect_ratio((HDMI_ASPECT_T)tv->aspect_ratio)*(float)tv->height/(float)tv->width;
-      score += fabs(par - 1.0f) * (1<<12);
-
-      /*printf("mode %dx%d@%d %s%s:%x par=%.2f score=%d\n", tv->width, tv->height, 
-             tv->frame_rate, tv->native?"N":"", tv->scan_mode?"I":"", tv->code, par, score);*/
-
-      if (score < best_score) 
-      {
-        tv_found = tv;
-        best_score = score;
-      }
-    }
-  }
-
-  if(tv_found)
-  {
-    char response[80];
-    printf("Output mode %d: %dx%d@%d %s%s:%x\n", tv_found->code, tv_found->width, tv_found->height, 
-           tv_found->frame_rate, tv_found->native?"N":"", tv_found->scan_mode?"I":"", tv_found->code);
-    if (m_NativeDeinterlace && tv_found->scan_mode)
-      vc_gencmd(response, sizeof response, "hvs_update_fields %d", 1);
-
-    // if we are closer to ntsc version of framerate, let gpu know
-    int ifps = (int)(fps+0.5f);
-    bool ntsc_freq = fabs(fps*1001.0f/1000.0f - ifps) < fabs(fps-ifps);
-
-    /* inform TV of ntsc setting */
-    HDMI_PROPERTY_PARAM_T property;
-    property.property = HDMI_PROPERTY_PIXEL_CLOCK_TYPE;
-    property.param1 = ntsc_freq ? HDMI_PIXEL_CLOCK_TYPE_NTSC : HDMI_PIXEL_CLOCK_TYPE_PAL;
-    property.param2 = 0;
-
-    /* inform TV of any 3D settings. Note this property just applies to next hdmi mode change, so no need to call for 2D modes */
-    property.property = HDMI_PROPERTY_3D_STRUCTURE;
-    property.param1 = HDMI_3D_FORMAT_NONE;
-    property.param2 = 0;
-    if (is3d != CONF_FLAGS_FORMAT_NONE)
-    {
-      if (is3d == CONF_FLAGS_FORMAT_SBS && tv_found->struct_3d_mask & HDMI_3D_STRUCT_SIDE_BY_SIDE_HALF_HORIZONTAL)
-        property.param1 = HDMI_3D_FORMAT_SBS_HALF;
-      else if (is3d == CONF_FLAGS_FORMAT_TB && tv_found->struct_3d_mask & HDMI_3D_STRUCT_TOP_AND_BOTTOM)
-        property.param1 = HDMI_3D_FORMAT_TB_HALF;
-      else if (is3d == CONF_FLAGS_FORMAT_FP && tv_found->struct_3d_mask & HDMI_3D_STRUCT_FRAME_PACKING)
-        property.param1 = HDMI_3D_FORMAT_FRAME_PACKING;
-      m_BcmHost.vc_tv_hdmi_set_property(&property);
-    }
-
-    printf("ntsc_freq:%d %s\n", ntsc_freq, property.param1 == HDMI_3D_FORMAT_SBS_HALF ? "3DSBS" :
-            property.param1 == HDMI_3D_FORMAT_TB_HALF ? "3DTB" : property.param1 == HDMI_3D_FORMAT_FRAME_PACKING ? "3DFP":"");
-    sem_t tv_synced;
-    sem_init(&tv_synced, 0, 0);
-    m_BcmHost.vc_tv_register_callback(CallbackTvServiceCallback, &tv_synced);
-    int success = m_BcmHost.vc_tv_hdmi_power_on_explicit_new(HDMI_MODE_HDMI, (HDMI_RES_GROUP_T)group, tv_found->code);
-    if (success == 0)
-      sem_wait(&tv_synced);
-    m_BcmHost.vc_tv_unregister_callback(CallbackTvServiceCallback);
-    sem_destroy(&tv_synced);
-  }
-  if (supported_modes)
-    delete[] supported_modes;
-}
-
-bool Exists(const std::string& path)
-{
-  struct stat buf;
-  auto error = stat(path.c_str(), &buf);
-  return !error || errno != ENOENT;
-}
-
-bool IsURL(const std::string& str)
-{
-  auto result = str.find("://");
-  if(result == std::string::npos || result == 0)
-    return false;
-
-  for(size_t i = 0; i < result; ++i)
-  {
-    if(!isalpha(str[i]))
-      return false;
-  }
-  return true;
-}
-
-bool IsPipe(const std::string& str)
-{
-  if (str.compare(0, 5, "pipe:") == 0)
-    return true;
-  return false;
-}
-
-static int get_mem_gpu(void)
-{
-   char response[80] = "";
-   int gpu_mem = 0;
-   if (vc_gencmd(response, sizeof response, "get_mem gpu") == 0)
-      vc_gencmd_number_property(response, "gpu", &gpu_mem);
-   return gpu_mem;
-}
-
-static void blank_background(uint32_t rgba)
-{
-  // if alpha is fully transparent then background has no effect
-  if (!(rgba & 0xff000000))
-    return;
-  // we create a 1x1 black pixel image that is added to display just behind video
-  DISPMANX_DISPLAY_HANDLE_T   display;
-  DISPMANX_UPDATE_HANDLE_T    update;
-  DISPMANX_RESOURCE_HANDLE_T  resource;
-  DISPMANX_ELEMENT_HANDLE_T   element;
-  int             ret;
-  uint32_t vc_image_ptr;
-  VC_IMAGE_TYPE_T type = VC_IMAGE_ARGB8888;
-  int             layer = m_config_video.layer - 1;
-
-  VC_RECT_T dst_rect, src_rect;
-
-  display = vc_dispmanx_display_open(m_config_video.display);
-  assert(display);
-
-  resource = vc_dispmanx_resource_create( type, 1 /*width*/, 1 /*height*/, &vc_image_ptr );
-  assert( resource );
-
-  vc_dispmanx_rect_set( &dst_rect, 0, 0, 1, 1);
-
-  ret = vc_dispmanx_resource_write_data( resource, type, sizeof(rgba), &rgba, &dst_rect );
-  assert(ret == 0);
-
-  vc_dispmanx_rect_set( &src_rect, 0, 0, 1<<16, 1<<16);
-  vc_dispmanx_rect_set( &dst_rect, 0, 0, 0, 0);
-
-  update = vc_dispmanx_update_start(0);
-  assert(update);
-
-  element = vc_dispmanx_element_add(update, display, layer, &dst_rect, resource, &src_rect,
-                                    DISPMANX_PROTECTION_NONE, NULL, NULL, DISPMANX_STEREOSCOPIC_MONO );
-  assert(element);
-
-  ret = vc_dispmanx_update_submit_sync( update );
-  assert( ret == 0 );
-}
-
-int main(int argc, char *argv[])
-{
-  signal(SIGSEGV, sig_handler);
-  signal(SIGABRT, sig_handler);
-  signal(SIGFPE, sig_handler);
-  signal(SIGINT, sig_handler);
-
-  bool                  m_send_eos            = false;
-  bool                  m_packet_after_seek   = false;
-  bool                  m_seek_flush          = false;
-  bool                  m_chapter_seek        = false;
-  std::string           m_filename;
-  double                m_incr                = 0;
-  double                m_loop_from           = 0;
-  CRBP                  g_RBP;
-  COMXCore              g_OMX;
-  bool                  m_stats               = false;
-  bool                  m_dump_format         = false;
-  bool                  m_dump_format_exit    = false;
-  FORMAT_3D_T           m_3d                  = CONF_FLAGS_FORMAT_NONE;
-  bool                  m_refresh             = false;
-  double                startpts              = 0;
-  uint32_t              m_blank_background    = 0;
-  bool sentStarted = false;
-  float m_threshold      = -1.0f; // amount of audio/video required to come out of buffering
-  float m_timeout        = 10.0f; // amount of time file/network operation can stall for before timing out
-  int m_orientation      = -1; // unset
-  float m_fps            = 0.0f; // unset
-  TV_DISPLAY_STATE_T   tv_state;
-  double last_seek_pos = 0;
-  bool idle = false;
-  std::string            m_cookie              = "";
-  std::string            m_user_agent          = "";
-  std::string            m_lavfdopts           = "";
-  std::string            m_avdict              = "";
-
-  const int font_opt        = 0x100;
-  const int italic_font_opt = 0x201;
-  const int font_size_opt   = 0x101;
-  const int align_opt       = 0x102;
-  const int no_ghost_box_opt = 0x203;
-  const int subtitles_opt   = 0x103;
-  const int lines_opt       = 0x104;
-  const int pos_opt         = 0x105;
-  const int vol_opt         = 0x106;
-  const int audio_fifo_opt  = 0x107;
-  const int video_fifo_opt  = 0x108;
-  const int audio_queue_opt = 0x109;
-  const int video_queue_opt = 0x10a;
-  const int no_deinterlace_opt = 0x10b;
-  const int threshold_opt   = 0x10c;
-  const int timeout_opt     = 0x10f;
-  const int boost_on_downmix_opt = 0x200;
-  const int no_boost_on_downmix_opt = 0x207;
-  const int key_config_opt  = 0x10d;
-  const int amp_opt         = 0x10e;
-  const int no_osd_opt      = 0x202;
-  const int orientation_opt = 0x204;
-  const int fps_opt         = 0x208;
-  const int live_opt        = 0x205;
-  const int layout_opt      = 0x206;
-  const int dbus_name_opt   = 0x209;
-  const int loop_opt        = 0x20a;
-  const int layer_opt       = 0x20b;
-  const int no_keys_opt     = 0x20c;
-  const int anaglyph_opt    = 0x20d;
-  const int native_deinterlace_opt = 0x20e;
-  const int display_opt     = 0x20f;
-  const int alpha_opt       = 0x210;
-  const int advanced_opt    = 0x211;
-  const int aspect_mode_opt = 0x212;
-  const int crop_opt        = 0x213;
-  const int http_cookie_opt = 0x300;
-  const int http_user_agent_opt = 0x301;
-  const int lavfdopts_opt   = 0x400;
-  const int avdict_opt      = 0x401;
-
-  struct option longopts[] = {
-    { "info",         no_argument,        NULL,          'i' },
-    { "with-info",    no_argument,        NULL,          'I' },
-    { "help",         no_argument,        NULL,          'h' },
-    { "version",      no_argument,        NULL,          'v' },
-    { "keys",         no_argument,        NULL,          'k' },
-    { "aidx",         required_argument,  NULL,          'n' },
-    { "adev",         required_argument,  NULL,          'o' },
-    { "stats",        no_argument,        NULL,          's' },
-    { "passthrough",  no_argument,        NULL,          'p' },
-    { "vol",          required_argument,  NULL,          vol_opt },
-    { "amp",          required_argument,  NULL,          amp_opt },
-    { "deinterlace",  no_argument,        NULL,          'd' },
-    { "nodeinterlace",no_argument,        NULL,          no_deinterlace_opt },
-    { "nativedeinterlace",no_argument,    NULL,          native_deinterlace_opt },
-    { "anaglyph",     required_argument,  NULL,          anaglyph_opt },
-    { "advanced",     optional_argument,  NULL,          advanced_opt },
-    { "hw",           no_argument,        NULL,          'w' },
-    { "3d",           required_argument,  NULL,          '3' },
-    { "allow-mvc",    no_argument,        NULL,          'M' },
-    { "hdmiclocksync", no_argument,       NULL,          'y' },
-    { "nohdmiclocksync", no_argument,     NULL,          'z' },
-    { "refresh",      no_argument,        NULL,          'r' },
-    { "genlog",       no_argument,        NULL,          'g' },
-    { "sid",          required_argument,  NULL,          't' },
-    { "pos",          required_argument,  NULL,          'l' },    
-    { "blank",        optional_argument,  NULL,          'b' },
-    { "font",         required_argument,  NULL,          font_opt },
-    { "italic-font",  required_argument,  NULL,          italic_font_opt },
-    { "font-size",    required_argument,  NULL,          font_size_opt },
-    { "align",        required_argument,  NULL,          align_opt },
-    { "no-ghost-box", no_argument,        NULL,          no_ghost_box_opt },
-    { "subtitles",    required_argument,  NULL,          subtitles_opt },
-    { "lines",        required_argument,  NULL,          lines_opt },
-    { "win",          required_argument,  NULL,          pos_opt },
-    { "crop",         required_argument,  NULL,          crop_opt },
-    { "aspect-mode",  required_argument,  NULL,          aspect_mode_opt },
-    { "audio_fifo",   required_argument,  NULL,          audio_fifo_opt },
-    { "video_fifo",   required_argument,  NULL,          video_fifo_opt },
-    { "audio_queue",  required_argument,  NULL,          audio_queue_opt },
-    { "video_queue",  required_argument,  NULL,          video_queue_opt },
-    { "threshold",    required_argument,  NULL,          threshold_opt },
-    { "timeout",      required_argument,  NULL,          timeout_opt },
-    { "boost-on-downmix", no_argument,    NULL,          boost_on_downmix_opt },
-    { "no-boost-on-downmix", no_argument, NULL,          no_boost_on_downmix_opt },
-    { "key-config",   required_argument,  NULL,          key_config_opt },
-    { "no-osd",       no_argument,        NULL,          no_osd_opt },
-    { "no-keys",      no_argument,        NULL,          no_keys_opt },
-    { "orientation",  required_argument,  NULL,          orientation_opt },
-    { "fps",          required_argument,  NULL,          fps_opt },
-    { "live",         no_argument,        NULL,          live_opt },
-    { "layout",       required_argument,  NULL,          layout_opt },
-    { "dbus_name",    required_argument,  NULL,          dbus_name_opt },
-    { "loop",         no_argument,        NULL,          loop_opt },
-    { "layer",        required_argument,  NULL,          layer_opt },
-    { "alpha",        required_argument,  NULL,          alpha_opt },
-    { "display",      required_argument,  NULL,          display_opt },
-    { "cookie",       required_argument,  NULL,          http_cookie_opt },
-    { "user-agent",   required_argument,  NULL,          http_user_agent_opt },
-    { "lavfdopts",    required_argument,  NULL,          lavfdopts_opt },
-    { "avdict",       required_argument,  NULL,          avdict_opt },
-    { 0, 0, 0, 0 }
-  };
-
-  #define S(x) (int)(DVD_PLAYSPEED_NORMAL*(x))
-  int playspeeds[] = {S(0), S(1/16.0), S(1/8.0), S(1/4.0), S(1/2.0), S(0.975), S(1.0), S(1.125), S(-32.0), S(-16.0), S(-8.0), S(-4), S(-2), S(-1), S(1), S(2.0), S(4.0), S(8.0), S(16.0), S(32.0)};
-  const int playspeed_slow_min = 0, playspeed_slow_max = 7, playspeed_rew_max = 8, playspeed_rew_min = 13, playspeed_normal = 14, playspeed_ff_min = 15, playspeed_ff_max = 19;
-  int playspeed_current = playspeed_normal;
-  double m_last_check_time = 0.0;
-  float m_latency = 0.0f;
-  int c;
-  std::string mode;
-
-  //Build default keymap just in case the --key-config option isn't used
-  map<int,int> keymap = KeyConfig::buildDefaultKeymap();
-
-  while ((c = getopt_long(argc, argv, "wiIhvkn:l:o:cslb::pd3:Myzt:rg", longopts, NULL)) != -1)
-  {
-    switch (c) 
-    {
-      case 'r':
-        m_refresh = true;
-        break;
-      case 'g':
-        m_gen_log = true;
-        break;
-      case 'y':
-        m_config_video.hdmi_clock_sync = true;
-        break;
-      case 'z':
-        m_no_hdmi_clock_sync = true;
-        break;
-      case '3':
-        mode = optarg;
-        if(mode != "SBS" && mode != "TB" && mode != "FP")
-        {
-          print_usage();
-          return 0;
-        }
-        if(mode == "TB")
-          m_3d = CONF_FLAGS_FORMAT_TB;
-        else if(mode == "FP")
-          m_3d = CONF_FLAGS_FORMAT_FP;
-        else
-          m_3d = CONF_FLAGS_FORMAT_SBS;
-        m_config_video.allow_mvc = true;
-        break;
-      case 'M':
-        m_config_video.allow_mvc = true;
-        break;
-      case 'd':
-        m_config_video.deinterlace = VS_DEINTERLACEMODE_FORCE;
-        break;
-      case no_deinterlace_opt:
-        m_config_video.deinterlace = VS_DEINTERLACEMODE_OFF;
-        break;
-      case native_deinterlace_opt:
-        m_config_video.deinterlace = VS_DEINTERLACEMODE_OFF;
-        m_NativeDeinterlace = true;
-        break;
-      case anaglyph_opt:
-        m_config_video.anaglyph = (OMX_IMAGEFILTERANAGLYPHTYPE)atoi(optarg);
-        break;
-      case advanced_opt:
-        m_config_video.advanced_hd_deinterlace = optarg ? (atoi(optarg) ? true : false): true;
-        break;
-      case 'w':
-        m_config_audio.hwdecode = true;
-        break;
-      case 'p':
-        m_config_audio.passthrough = true;
-        break;
-      case 's':
-        m_stats = true;
-        break;
-      case 'o':
-        {
-          CStdString str = optarg;
-          int colon = str.Find(':');
-          if(colon >= 0)
-          {
-            m_config_audio.device = str.Mid(0, colon);
-            m_config_audio.subdevice = str.Mid(colon + 1, str.GetLength() - colon);
-          }
-          else
-          {
-            m_config_audio.device = str;
-            m_config_audio.subdevice = "";
-          }
-        }
-        if(m_config_audio.device != "local" && m_config_audio.device != "hdmi" && m_config_audio.device != "both" &&
-           m_config_audio.device != "alsa")
-        {
-          printf("Bad argument for -%c: Output device must be `local', `hdmi', `both' or `alsa'\n", c);
-          return EXIT_FAILURE;
-        }
-        m_config_audio.device = "omx:" + m_config_audio.device;
-        break;
-      case 'i':
-        m_dump_format      = true;
-        m_dump_format_exit = true;
-        break;
-      case 'I':
-        m_dump_format = true;
-        break;
-      case 't':
-        m_subtitle_index = atoi(optarg) - 1;
-        if(m_subtitle_index < 0)
-          m_subtitle_index = 0;
-        break;
-      case 'n':
-        m_audio_index_use = atoi(optarg);
-        break;
-      case 'l':
-        {
-          if(strchr(optarg, ':'))
-          {
-            unsigned int h, m, s;
-            if(sscanf(optarg, "%u:%u:%u", &h, &m, &s) == 3)
-              m_incr = h*3600 + m*60 + s;
-          }
-          else
-          {
-            m_incr = atof(optarg);
-          }
-          if(m_loop)
-            m_loop_from = m_incr;
-        }
-        break;
-      case no_osd_opt:
-        m_osd = false;
-        break;
-      case no_keys_opt:
-        m_no_keys = true;
-        break;
-      case font_opt:
-        m_font_path = optarg;
-        m_asked_for_font = true;
-        break;
-      case italic_font_opt:
-        m_italic_font_path = optarg;
-        m_asked_for_italic_font = true;
-        break;
-      case font_size_opt:
-        {
-          const int thousands = atoi(optarg);
-          if (thousands > 0)
-            m_font_size = thousands*0.001f;
-        }
-        break;
-      case align_opt:
-        m_centered = !strcmp(optarg, "center");
-        break;
-      case no_ghost_box_opt:
-        m_ghost_box = false;
-        break;
-      case subtitles_opt:
-        m_external_subtitles_path = optarg;
-        m_has_external_subtitles = true;
-        break;
-      case lines_opt:
-        m_subtitle_lines = std::max(atoi(optarg), 1);
-        break;
-      case pos_opt:
-        sscanf(optarg, "%f %f %f %f", &m_config_video.dst_rect.x1, &m_config_video.dst_rect.y1, &m_config_video.dst_rect.x2, &m_config_video.dst_rect.y2) == 4 ||
-        sscanf(optarg, "%f,%f,%f,%f", &m_config_video.dst_rect.x1, &m_config_video.dst_rect.y1, &m_config_video.dst_rect.x2, &m_config_video.dst_rect.y2);
-        break;
-      case crop_opt:
-        sscanf(optarg, "%f %f %f %f", &m_config_video.src_rect.x1, &m_config_video.src_rect.y1, &m_config_video.src_rect.x2, &m_config_video.src_rect.y2) == 4 ||
-        sscanf(optarg, "%f,%f,%f,%f", &m_config_video.src_rect.x1, &m_config_video.src_rect.y1, &m_config_video.src_rect.x2, &m_config_video.src_rect.y2);
-        break;
-      case aspect_mode_opt:
-        if (optarg) {
-          if (!strcasecmp(optarg, "letterbox"))
-            m_config_video.aspectMode = 1;
-          else if (!strcasecmp(optarg, "fill"))
-            m_config_video.aspectMode = 2;
-          else if (!strcasecmp(optarg, "stretch"))
-            m_config_video.aspectMode = 3;
-          else
-            m_config_video.aspectMode = 0;
-        }
-        break;
-      case vol_opt:
-	m_Volume = atoi(optarg);
-        break;
-      case amp_opt:
-	m_Amplification = atoi(optarg);
-        break;
-      case boost_on_downmix_opt:
-        m_config_audio.boostOnDownmix = true;
-        break;
-      case no_boost_on_downmix_opt:
-        m_config_audio.boostOnDownmix = false;
-        break;
-      case audio_fifo_opt:
-        m_config_audio.fifo_size = atof(optarg);
-        break;
-      case video_fifo_opt:
-        m_config_video.fifo_size = atof(optarg);
-        break;
-      case audio_queue_opt:
-        m_config_audio.queue_size = atof(optarg);
-        break;
-      case video_queue_opt:
-        m_config_video.queue_size = atof(optarg);
-        break;
-      case threshold_opt:
-        m_threshold = atof(optarg);
-        break;
-      case timeout_opt:
-        m_timeout = atof(optarg);
-        break;
-      case orientation_opt:
-        m_orientation = atoi(optarg);
-        break;
-      case fps_opt:
-        m_fps = atof(optarg);
-        break;
-      case live_opt:
-        m_config_audio.is_live = true;
-        break;
-      case layout_opt:
-      {
-        const char *layouts[] = {"2.0", "2.1", "3.0", "3.1", "4.0", "4.1", "5.0", "5.1", "7.0", "7.1"};
-        unsigned i;
-        for (i=0; i<sizeof layouts/sizeof *layouts; i++)
-          if (strcmp(optarg, layouts[i]) == 0)
-          {
-            m_config_audio.layout = (enum PCMLayout)i;
-            break;
-          }
-        if (i == sizeof layouts/sizeof *layouts)
-        {
-          printf("Wrong layout specified: %s\n", optarg);
-          print_usage();
-          return EXIT_FAILURE;
-        }
-        break;
-      }
-      case dbus_name_opt:
-        m_dbus_name = optarg;
-        break;
-      case loop_opt:
-        if(m_incr != 0)
-            m_loop_from = m_incr;
-        m_loop = true;
-        break;
-      case 'b':
-        m_blank_background = optarg ? strtoul(optarg, NULL, 0) : 0xff000000;
-        break;
-      case key_config_opt:
-        keymap = KeyConfig::parseConfigFile(optarg);
-        break;
-      case layer_opt:
-        m_config_video.layer = atoi(optarg);
-        break;
-      case alpha_opt:
-        m_config_video.alpha = atoi(optarg);
-        break;
-      case display_opt:
-        m_config_video.display = atoi(optarg);
-        break;
-      case http_cookie_opt:
-        m_cookie = optarg;
-        break;
-      case http_user_agent_opt:
-        m_user_agent = optarg;
-        break;    
-      case lavfdopts_opt:
-        m_lavfdopts = optarg;
-        break;
-      case avdict_opt:
-        m_avdict = optarg;
-        break;
-      case 0:
-        break;
-      case 'h':
-        print_usage();
-        return EXIT_SUCCESS;
-        break;
-      case 'v':
-        print_version();
-        return EXIT_SUCCESS;
-        break;
-      case 'k':
-        print_keybindings();
-        return EXIT_SUCCESS;
-        break;
-      case ':':
-        return EXIT_FAILURE;
-        break;
-      default:
-        return EXIT_FAILURE;
-        break;
-    }
-  }
-
+	// SHOW HELP/USAGE IF BAD COMMAND LINE ARGS...
   if (optind >= argc) {
     print_usage();
     return 0;
   }
 
+	// GET FILENAME/STREAM URL FROM COMMAND LINE ARGS
   m_filename = argv[optind];
 
+	// INLINE FUNCTION TO PRINT ERRORS ABOUT MISSING FILES...
   auto PrintFileNotFound = [](const std::string& path)
   {
-    printf("File \"%s\" not found.\n", path.c_str());
+    printf("(OMXPLAYER) File \"%s\" not found.\n", path.c_str());
   };
 
+	// CHECK TO MAKE SURE FILE EXISTS, SUBTITLES EXITS, SUBTITLE FONT EXISTS (EXIT IF NOT...)
+	// ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = 
   bool filename_is_URL = IsURL(m_filename);
 
   if(!filename_is_URL && !IsPipe(m_filename) && !Exists(m_filename))
@@ -965,7 +269,9 @@ int main(int argc, char *argv[])
     PrintFileNotFound(m_external_subtitles_path);
     return EXIT_FAILURE;
   }
+	// ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = ~  - = 
 
+	// SET UP SUBITTLES FILESNAMES...
   if(!m_has_external_subtitles && !filename_is_URL)
   {
     auto subtitles_path = m_filename.substr(0, m_filename.find_last_of(".")) +
@@ -978,6 +284,7 @@ int main(int argc, char *argv[])
     }
   }
     
+	// CHECK IF IT'S A SOUND FILE TYPE (VS. VIDEO)
   bool m_audio_extension = false;
   const CStdString m_musicExtensions = ".nsv|.m4a|.flac|.aac|.strm|.pls|.rm|.rma|.mpa|.wav|.wma|.ogg|.mp3|.mp2|.m3u|.mod|.amf|.669|.dmf|.dsm|.far|.gdm|"
                  ".imf|.it|.m15|.med|.okt|.s3m|.stm|.sfx|.ult|.uni|.xm|.sid|.ac3|.dts|.cue|.aif|.aiff|.wpl|.ape|.mac|.mpc|.mp+|.mpp|.shn|.zip|.rar|"
@@ -996,17 +303,24 @@ int main(int argc, char *argv[])
     CLog::SetLogLevel(LOG_LEVEL_NONE);
   }
 
-  g_RBP.Initialize();
-  g_OMX.Initialize();
+	// ** INTIALIZE OMX INTERFACE **
+  g_RBP.Initialize(); // I THINK THIS IS A HOST FOR THE OMX DLL 
+  g_OMX.Initialize(); // INTIALIZE OMX CORE INTERFACE TO GPU
 
+	// CLEAR THE BACKGROUND WITH THE GIVEN COLOR...
+  //blank_background(0xffffffff);
   blank_background(m_blank_background);
 
+	// CHECK THAT ENOUGH GPU MEMORY IS CONFIGURED...
   int gpu_mem = get_mem_gpu();
   int min_gpu_mem = 64;
   if (gpu_mem > 0 && gpu_mem < min_gpu_mem)
-    printf("Only %dM of gpu_mem is configured. Try running \"sudo raspi-config\" and ensure that \"memory_split\" has a value of %d or greater\n", gpu_mem, min_gpu_mem);
+    printf("(OMXPLAYER) Only %dM of gpu_mem is configured. Try running \"sudo raspi-config\" and ensure that \"memory_split\" has a value of %d or greater\n", gpu_mem, min_gpu_mem);
 
+	// ** CREATE OMX CLOCK **
   m_av_clock = new OMXClock();
+  
+  // ** INITIALIZE OMX CONTROL, PASS OMX CONTROL THE OTHER EXISTING OBJECTS... **
   int control_err = m_omxcontrol.init(
     m_av_clock,
     &m_player_audio,
@@ -1014,6 +328,8 @@ int main(int argc, char *argv[])
     &m_omx_reader,
     m_dbus_name
   );
+  
+  // INTIIALIZE KEYBOARD IF ENABLED...
   if (false == m_no_keys)
   {
     m_keyboard = new Keyboard();
@@ -1024,24 +340,31 @@ int main(int argc, char *argv[])
     m_keyboard->setDbusName(m_dbus_name);
   }
 
+	//--------------------------------------------
+	// ** OPEN MEDIA FILE (OR STREAM) **
   if(!m_omx_reader.Open(m_filename.c_str(), m_dump_format, m_config_audio.is_live, m_timeout, m_cookie.c_str(), m_user_agent.c_str(), m_lavfdopts.c_str(), m_avdict.c_str()))
     goto do_exit;
+	//--------------------------------------------
 
+	// IF THE FLAG IS SET TO ONLY SHOW THE VIDEO FORMAT, THEN SKIP TO THE EXIT ROUTINE NOW ----->
   if (m_dump_format_exit)
     goto do_exit;
 
+	// DETERMINE WHICH TYPE OF MEDIA STREAMS ARE AVAILABLE...
   m_has_video     = m_omx_reader.VideoStreamCount();
   m_has_audio     = m_audio_index_use < 0 ? false : m_omx_reader.AudioStreamCount();
   m_has_subtitle  = m_has_external_subtitles ||
                     m_omx_reader.SubtitleStreamCount();
   m_loop          = m_loop && m_omx_reader.CanSeek();
 
+	// WARN THAT NO VIDEO WILL BE SHOWN IF FILE IS AUDIO TYPE...
   if (m_audio_extension)
   {
     CLog::Log(LOGWARNING, "%s - Ignoring video in audio filetype:%s", __FUNCTION__, m_filename.c_str());
     m_has_video = false;
   }
 
+	// THIS APPEARS TO BE SETTING FLAGS FOR 3D FILE TYPES...
   if(m_filename.find("3DSBS") != string::npos || m_filename.find("HSBS") != string::npos)
     m_3d = CONF_FLAGS_FORMAT_SBS;
   else if(m_filename.find("3DTAB") != string::npos || m_filename.find("HTAB") != string::npos)
@@ -1051,29 +374,39 @@ int main(int argc, char *argv[])
   if (m_3d != CONF_FLAGS_FORMAT_NONE || m_NativeDeinterlace)
     m_refresh = true;
 
+	// TURNS ON HDMI SYNC IN SOME CASES...?
   // you really don't want want to match refresh rate without hdmi clock sync
   if ((m_refresh || m_NativeDeinterlace) && !m_no_hdmi_clock_sync)
     m_config_video.hdmi_clock_sync = true;
 
+	// ** INITIALIZE A/V CLOCK... **
   if(!m_av_clock->OMXInitialize())
     goto do_exit;
 
+  //printf( "(OMXPLAYER) BEFORE HDMI SYNC TEST\n" );
+  
+	// EXIT IF HDMI SYNC FAILS...?  ----------------------->
   if(m_config_video.hdmi_clock_sync && !m_av_clock->HDMIClockSync())
     goto do_exit;
-
+  
+	// WHY IS IS CYCLING THROUGH A/V CLOCK STATES HERE...?
   m_av_clock->OMXStateIdle();
   m_av_clock->OMXStop();
   m_av_clock->OMXPause();
 
+	// NOT SURE WHAT "HINTS" ARE...MAYBE DECODER CONFIG INFO...???
   m_omx_reader.GetHints(OMXSTREAM_AUDIO, m_config_audio.hints);
   m_omx_reader.GetHints(OMXSTREAM_VIDEO, m_config_video.hints);
 
+	// SET UP FPS...?
   if (m_fps > 0.0f)
     m_config_video.hints.fpsrate = m_fps * DVD_TIME_BASE, m_config_video.hints.fpsscale = DVD_TIME_BASE;
 
+	// CHOOSE AUDIO STREAM
   if(m_audio_index_use > 0)
     m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, m_audio_index_use-1);
           
+  // SET UP VIDEO MODE (IF VIDEO)...
   if(m_has_video && m_refresh)
   {
     memset(&tv_state, 0, sizeof(TV_DISPLAY_STATE_T));
@@ -1094,11 +427,19 @@ int main(int argc, char *argv[])
   }
   m_config_video.display_aspect *= (float)current_tv_state.display.hdmi.height/(float)current_tv_state.display.hdmi.width;
 
+	// SET THE DISPLAY ORIENTATION...???
   if (m_orientation >= 0)
     m_config_video.hints.orientation = m_orientation;
+    
+  //printf( "(OMXPLAYER) BEFORE OPEN VIDEO STREAM\n" );
+
+  // ** OPEN THE VIDEO STREAM IN THE VIDEO OBJECT **
   if(m_has_video && !m_player_video.Open(m_av_clock, m_config_video))
     goto do_exit;
 
+  //printf( "(OMXPLAYER) BEFORE MAIN LOOP\n" );
+
+	// SET UP SUBTITLES...
   if(m_has_subtitle || m_osd)
   {
     std::vector<Subtitle> external_subtitles;
@@ -1124,6 +465,7 @@ int main(int argc, char *argv[])
         m_player_subtitles.SetSubtitleRect(m_config_video.dst_rect.x1, m_config_video.dst_rect.y1, m_config_video.dst_rect.x2, m_config_video.dst_rect.y2);
   }
 
+	// SET UP SUBTITLES...
   if(m_has_subtitle)
   {
     if(!m_has_external_subtitles)
@@ -1142,6 +484,7 @@ int main(int argc, char *argv[])
 
   m_omx_reader.GetHints(OMXSTREAM_AUDIO, m_config_audio.hints);
 
+	// SET UP AUDIO DEVICES...
   if (m_config_audio.device == "")
   {
     if (m_BcmHost.vc_tv_hdmi_audio_supported(EDID_AudioFormat_ePCM, 2, EDID_AudioSampleRate_e44KHz, EDID_AudioSampleSize_16bit ) == 0)
@@ -1150,9 +493,11 @@ int main(int argc, char *argv[])
       m_config_audio.device = "omx:local";
   }
 
+	// "ALSA" PROBABLY ENABLES USING USB AUDIO ADAPTERS...
   if(m_config_audio.device == "omx:alsa" && m_config_audio.subdevice.empty())
     m_config_audio.subdevice = "default";
 
+	// CHECK IF HDMI CONNECTED DEVICE SUPPORTS AC3 OR DTS DIGITAL AUDIO PASSTHROUGH...
   if ((m_config_audio.hints.codec == AV_CODEC_ID_AC3 || m_config_audio.hints.codec == AV_CODEC_ID_EAC3) &&
       m_BcmHost.vc_tv_hdmi_audio_supported(EDID_AudioFormat_eAC3, 2, EDID_AudioSampleRate_e44KHz, EDID_AudioSampleSize_16bit ) != 0)
     m_config_audio.passthrough = false;
@@ -1160,9 +505,11 @@ int main(int argc, char *argv[])
       m_BcmHost.vc_tv_hdmi_audio_supported(EDID_AudioFormat_eDTS, 2, EDID_AudioSampleRate_e44KHz, EDID_AudioSampleSize_16bit ) != 0)
     m_config_audio.passthrough = false;
 
+	// OPEN AUDIO STREAM WITH AUDIO DECODER/PLAYER CLASS...
   if(m_has_audio && !m_player_audio.Open(m_av_clock, m_config_audio, &m_omx_reader))
     goto do_exit;
 
+	// SET STARTING VOLUME...
   if(m_has_audio)
   {
     m_player_audio.SetVolume(pow(10, m_Volume / 2000.0));
@@ -1170,369 +517,915 @@ int main(int argc, char *argv[])
       m_player_audio.SetDynamicRangeCompression(m_Amplification);
   }
 
+	// NOT SURE WHAT THIS THRESHOLD IS FOR...???
   if (m_threshold < 0.0f)
     m_threshold = m_config_audio.is_live ? 0.7f : 0.2f;
 
   PrintSubtitleInfo();
 
+	// RESET OMX CLOCK AND START PLAYING...???
   m_av_clock->OMXReset(m_has_video, m_has_audio);
   m_av_clock->OMXStateExecute();
   sentStarted = true;
 
+  // *** DEBUG - ADDED THIS TO PAUSE ON START ***
+  //m_av_clock->OMXStop();
+
+  //printf( "(OMXPLAYER) LAUNCHED: DBUS=%s <***\n", m_dbus_name.c_str() );
+  //printf( "(OMXPLAYER) \\FILE=%s <***\n", m_filename.c_str() );
+
+  // DEFAULT PRELOADING VIDEO WINDOW OFF-SCREEN
+  m_config_video.dst_rect.x1 = OFFSCREEN_X1; 
+  m_config_video.dst_rect.y1 = OFFSCREEN_Y1;
+  m_config_video.dst_rect.x2 = OFFSCREEN_X2;
+  m_config_video.dst_rect.y2 = OFFSCREEN_Y2; //*/
+
+//------------------------------------------------------------------------------------------------
+#pragma mark MAIN LOOP  ~  ~  ~  ~  ~  ~  ~  ~  
+
+  // MAIN LOOP... 
   while(!m_stop)
   {
+
+    bool update = false; 
+
+    // /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+    // *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + 
+    //  + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + **
+    // *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + 
+    // *** DEBUG - SHOW MEDIA TIME *** 
+    mediaTimeUSec = m_av_clock->OMXMediaTime() + (localLoopCount * videoLength * 1000);
+    cycleCount++;
+    
+    long long videoStartTime = mediaTimeOffsetMSec + playlistStartTimeMSec;
+    
+    // DEBUG DISPLAY
+    /*if( cycleCount%(66*3) == 0 )
+      printf( "PAUS: %d  MEDIA_TIME: %f  CLOCK_TIME: %f  LOOP#: %ld  LOCAL#: %ld\n", 
+              m_Pause, mediaTimeUSec/1000000.0, (getCurrentTimeMSec() - videoStartTime)/1000.0, loopCount, localLoopCount ); //*/
+    
+    WindowFrame testFrame = {0,0,1024,1280};
+    testFrame.x = 1;
+    
+    if( startPause == true )
+    {
+      startPause = false;
+      printf( "(OMXPLAYER) ** START PAUSE + *** + *** + *** + *** + *** + *** + *** + *** + **\n" );
+      timelineState = STATE_USER_PAUSING;
+    }
+    
+    if( startUnpause == true )
+    {
+      startUnpause = false;
+      printf( "(OMXPLAYER) ** START UNPAUSE + *** + *** + *** + *** + *** + *** + *** + *** + **\n" );
+      if( timelineState == STATE_USER_PAUSED )
+      {
+        timelineState = STATE_PRELOADING_PAUSED;
+        //timelineState = STATE_USER_UNPAUSING;
+      }
+    }
+    
+    // SWITCH TO HANDLE PRELOADING OF VIDEO BASED ON SCHEDULING...
+    switch( timelineState )
+    { 
+      //____________________________________________________________________________
+      case STATE_STARTUP: //-------------------------------------------
+      // DECIDE WHETHER TO GO DIRECTLY INTO PRELOADING STATE OR SEEK TO LOCATION...
+      {
+        // IF NO START TIME SET (STARTED MANUALLY FROM COMMAND LINE)...
+        if( videoStartTime == 0 )
+        {
+          printf( "(OMXPLAYER) NO START TIME SET -- PLAY!\n" );
+          timelineState = STATE_PLAYING;
+        }
+        else
+        {
+          // IF WE'RE ALREADY IN THE MIDDLE OF THE VIDEO...
+          if( videoStartTime < getCurrentTimeMSec() ) // <-----------
+          {
+            // START IN THE MIDDLE OF THE VIDEO SOMEWHERE...
+            timelineState = STATE_PRELOAD_SEEK;
+          }
+          else //*/
+          {
+            // START AT THE BEGINNING OF THE VIDEO...
+            timelineState = STATE_PRELOADING;
+          }        
+        }
+
+        /*printf( "(OMXPLAYER) :::~~~:::~~~:::~~~ PRELOADING........................................\n" );
+        printf( "(OMXPLAYER) MEDIA TIME: %f\n", mediaTimeUSec ); //*/
+        break;
+      }
+
+#define DEBUG_JUMP_FORWARD_SEC 20
+#define SECONDS_TO_JUMP_AHEAD 2
+
+      //____________________________________________________________________________
+      case STATE_PRELOAD_SEEK: // ---------------------------------------
+      // JUMP TO A FEW SECONDS LATER THAN WHERE PLAYBACK SHOULD CURRENTLY BE...
+      {
+        //  IF WE'RE SEEKING BEYOND THE FIRST ITERATION OF THE LOOP (NOTE: MAKE SURE THIS IS ONLY USED IN SEAMLESS LOOP MODE!)...
+        if( (getCurrentTimeMSec() - videoStartTime) > videoLength )
+          localLoopCount = (getCurrentTimeMSec() - videoStartTime) / videoLength; // <-- SET THE LOOP NUMBER FOR THE SEAMLESS LOOP TIMING SYSTEM
+
+        // IN SEAMLESS LOOP MODE, CHECK TO SEE IF THE TARGET TIME IS NEAR OR BEYOND THE END OF THE LOOP...
+        const int MARGIN_SEC = 2;
+        if( m_seamless_loop == true  &&  ( (getCurrentTimeMSec() - videoStartTime) % videoLength ) / 1000 + SECONDS_TO_JUMP_AHEAD + MARGIN_SEC > (videoLength/1000) )
+        {
+          // START AT THE BEGINNING OF THE NEXT LOOP...
+          localLoopCount++;
+          timelineState = STATE_PRELOADING;
+        }
+        else
+        {
+          // IF SEEK ENABLED (THIS SHOULD ALWAYS BE ENABLED SINCE I'M NEVER PLAYING STREAMS)...
+          if(m_omx_reader.CanSeek())  
+          {
+            // SEEK TO A COUPLE SECONDS AFTER WHAT SHOULD BE CURRENTLY PLAYING...
+            m_incr = ( (getCurrentTimeMSec() - videoStartTime) % videoLength ) / 1000 + SECONDS_TO_JUMP_AHEAD; // m_incr VARIABLE UNIT IS SECONDS
+            m_Pause = true;
+            timelineState = STATE_PRELOADING_PAUSED;
+          }
+        }
+
+        printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&&&&&&&&&&&&& STATE_PRELOAD_SEEK:   seek n_incr = %lld\n", m_incr ); //*/
+        break;
+      }
+
+      //____________________________________________________________________________
+      /*case STATE_PRELOAD_SEEK_PAUSE: //---------------------------------------
+      // THIS IS CURRENTLY UNUSED!
+      // PAUSE ON STARTUP -- IS THIS REALLY NEEDED?
+      {
+        //if( cycleCount%40 == 0 )
+        //printf( "(OMXPLAYER) PRELOADING MEDIA TIME: %f\n", mediaTimeUSec ); 
+        if( mediaTimeUSec > (DEBUG_JUMP_FORWARD_SEC * 1000 * 1000) + 2000000  ) // WAIT X SECONDS FOR VIDEO TO START RENDERING...
+        {
+          //printf( "(OMXPLAYER) PRELOADING MEDIA TIME: >>>> %f\n", mediaTimeUSec ); 
+          m_Pause = true;
+          //timelineState = STATE_PLAYING;
+          timelineState = STATE_PRELOADING_PAUSED;
+        }
+        break;
+      } //*/
+        
+      //____________________________________________________________________________
+      case STATE_PRELOADING: //---------------------------------------
+      // PAUSE VIDEO AS SOON AS IT PLAYS THE FIRST FRAME.
+      {
+        // DEBUG DISPLAY
+        //if( cycleCount%40 == 0 )
+          //printf( "(OMXPLAYER) PRELOADING MEDIA TIME: %f\n", mediaTimeUSec ); //*/
+          //printf( "(OMXPLAYER) \\-- CURRENT TIME: %lld \n", getCurrentTimeMSec() );
+    
+    
+        // WAIT FOR VIDEO TO REACH FIRST FRAME...
+        //if( mediaTimeUSec > 2000000  ) // DEBUG!
+        //if( mediaTimeUSec > 2000 * 1000  ) // DEBUG!
+        if( mediaTimeUSec > 0  ) 
+        {
+          printf( "(OMXPLAYER) &&&&&&&& FINAL PRELOADING MEDIA TIME: %f\n", mediaTimeUSec ); 
+          //printf( ":::~~~:::~~~:::~~~ PAUSED........................................\n" );
+          //printf( "MEDIA TIME: %f\n", mediaTimeUSec ); 
+          update = true;
+          m_Pause = true;
+          timelineState = STATE_PRELOADING_PAUSED_FROM_ZERO;
+        } //*/
+        break;
+      }
+      
+      //____________________________________________________________________________
+      case STATE_USER_PAUSING: //---------------------------------------
+      // PAUSE VIDEO WHEN IT REACHES PAUSE TIME
+      {
+        const float DIV = 1.0;
+        //if( (mediaTimeUSec/1000) + videoStartTime > pauseTimeMSec )
+        if( getCurrentTimeMSec() - playlistStartTimeMSec > pauseTimeMSec )
+        {
+          //printf( "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& PRELOADING MEDIA TIME: %f\n", mediaTimeUSec ); //*/
+          //printf( "(OMXPLAYER) MEDIA TIME: %f\n", mediaTimeUSec ); //*/
+          //printf( "(OMXPLAYER)  ~~:::~~~ PAUSE LOCKED....... %.1f TARGET: %.1f\n", pauseTimeMSec/DIV, ((mediaTimeUSec/1000.0) + videoStartTime)/DIV ); //*/
+          printf( "(OMXPLAYER)  ~~:::~~~ PAUSE LOCKED....... %.1f TARGET: %.1f 'OFFSET': %.1f \n", pauseTimeMSec/DIV, (getCurrentTimeMSec() - playlistStartTimeMSec)/DIV, playlistStartTimeMSec/DIV ); //*/
+          update = true;
+          m_Pause = true;
+          timelineState = STATE_USER_PAUSED;
+        }
+        else
+        {
+          if( cycleCount%40 == 0 )
+            printf( "(OMXPLAYER) WAITING FOR PAUSE: %.1f TARGET: %.1f  'OFFSET': %.1f\n", pauseTimeMSec/DIV, (getCurrentTimeMSec() - playlistStartTimeMSec)/DIV, playlistStartTimeMSec/DIV ); //*/
+            //printf( "(OMXPLAYER) WAITING FOR PAUSE: %.1f TARGET: %.1f\n", pauseTimeMSec/DIV, ((mediaTimeUSec/1000.0) + videoStartTime)/DIV ); //*/
+        }
+        break;
+      }
+      
+      //____________________________________________________________________________
+      case STATE_USER_PAUSED: //---------------------------------------
+      // VIDEO IS PAUSED
+      {
+        break;
+      }
+      
+      //____________________________________________________________________________
+      case STATE_USER_UNPAUSING: //---------------------------------------
+      // THIS STATE PROBABLY NOT NEEDED 
+      // WAIT FOR UNPAUSE TIME AND UNPAUSE VIDEO`
+      {
+        break;
+      }
+      
+#define UNPAUSE_DELAY_MSEC 2
+      
+      //____________________________________________________________________________
+      case STATE_PRELOADING_PAUSED_FROM_ZERO: //---------------------------------
+      // WAIT FOR VIDEO MEDIA TIME TO MATCH ACTUAL TIME OFFSET AND THEN UNPAUSE VIDEO.
+      // THIS IS EXACTLY THE SAME AS "STATE_PRELOADING_PAUSED", CAN THESE BE MERGED?
+      //printf( "(OMXPLAYER) WAITING TO START:   %lld    %lld \n", (long long)(mediaTimeUSec/1000) + (long long)videoStartTime, getCurrentTimeMSec() );
+      {
+        //const int UNPAUSE_DELAY_MSEC = 2; // TAKES ABOUT 2 MSEC TO START PLAYING AGAIN
+        if( (mediaTimeUSec/1000) + videoStartTime <= (getCurrentTimeMSec() + UNPAUSE_DELAY_MSEC) )
+        {
+          printf( "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& OMXPLAYER STATE_PRELOADING_PAUSED: ZERO  unpausing\n" );
+          printf( ":::~~~:::~~~:::~~~ PLAYING........................................\n" );
+          printf( "MEDIA TIME: %f\n", mediaTimeUSec );
+          printf( "currentTimeMSec()=%lld   videoStartTime=%lld  videoLength=%lld\n", getCurrentTimeMSec(), videoStartTime, videoLength ); //*/
+          update = true;
+          m_Pause = false;
+          timelineState = STATE_PLAYING;
+          videoPositionChanged = true;
+        }
+        break;
+      }
+
+      //____________________________________________________________________________
+      case STATE_PRELOADING_PAUSED: //---------------------------------
+      // WAIT FOR VIDEO MEDIA TIME TO MATCH ACTUAL TIME OFFSET AND THEN UNPAUSE VIDEO.
+      // THIS IS EXACTLY THE SAME AS "STATE_PRELOADING_PAUSED_FROM_ZERO", CAN THESE BE MERGED?
+      {
+        //const int UNPAUSE_DELAY_MSEC = 2; // TAKES ABOUT 2 MSEC TO START PLAYING AGAIN
+        if( (mediaTimeUSec/1000) + videoStartTime < (getCurrentTimeMSec() + UNPAUSE_DELAY_MSEC) ) 
+        {
+          //printf( "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& OMXPLAYER STATE_PRELOADING_PAUSED:   unpausing\n" );
+          update = true;
+          m_Pause = false;
+          timelineState = STATE_PLAYING;
+          videoPositionChanged = true;
+        }
+        break;
+      } //*/
+
+      //____________________________________________________________________________
+      case STATE_PLAYING: //-------------------------------------------
+      // PLAYS VIDEO AND THROTTLES SPEED AS NECESSARY TO MATCH SCHEDULED TIME OFFSET.
+      // STOPS VIDEO WHEN IT'S DONE PLAYING (UNLESS IN SEAMLESS LOOP MODE).
+      {
+        //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- STATE: PLAYING\n" );
+
+        // IF SCHEDULING ENABLED...
+        if( videoStartTime != 0 )
+        {
+          //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- VIDEOSTART TIME != 0 \n" );
+
+          // THROTTLE SPEED TO KEEP IN SYNC WITH CLOCK (WHEN SYNC IS ON)...
+          long long playbackTimeOffsetMSec = (long long)(mediaTimeUSec/1000) - (getCurrentTimeMSec()-videoStartTime);
+          //if( cycleCount%5000 == 0 )
+          //if( cycleCount%1200 == 0 )
+          //if( cycleCount%800 == 0 )
+          if( cycleCount%80 == 0 )
+          {
+            
+          
+          
+            //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- CHECKING SYNC ALIGNMENT\n" );
+            if( syncEnabled == false )
+            {
+              //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- THROTTLING DISABLED\n" );
+            }
+            else
+            {
+              const unsigned AVERAGE_ARRAY_MAX_SIZE = 50;
+              timeOffsetArray.push_back( playbackTimeOffsetMSec );
+              if( timeOffsetArray.size() > AVERAGE_ARRAY_MAX_SIZE )
+                timeOffsetArray.pop_front();
+              int sum = 0;  
+              for( unsigned i=0; i<timeOffsetArray.size(); i++ )
+                sum += timeOffsetArray[i];
+              float currentAverageOffset = sum / (float) timeOffsetArray.size();
+              
+              //------------------------------
+              //printf( "--(OMXPLAYER) TIME OFFSET -- AVERAGE: %f  THIS OFFSET: %lld \n", currentAverageOffset, playbackTimeOffsetMSec );
+
+              //const long long MIN_OFFSET = -2; // <--------------
+              //const long long MAX_OFFSET = 2; // <---------------
+              const float MIN_OFFSET = -0.5; // <--------------
+              const float MAX_OFFSET = 1.0; // <---------------
+
+              const int MINIMUM_SAMPLES_BEFORE_ALLOWING_ADJUSTMENT = 2;
+              if( timeOffsetArray.size() > MINIMUM_SAMPLES_BEFORE_ALLOWING_ADJUSTMENT )
+              {
+                if( currentAverageOffset > MAX_OFFSET )
+                {
+                  int slowdownSpeed = ceil( (playbackTimeOffsetMSec - MAX_OFFSET) / 4.0 );
+                  SetSpeed( DVD_PLAYSPEED_NORMAL - slowdownSpeed ); // slowdownSpeed SHOULD BE BETWEEN 1 and 7
+                  //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- SPEED SLOW %f %d\n", playbackTimeOffsetMSec - MAX_OFFSET, slowdownSpeed ); // DEBUG!
+                }
+                else
+                {
+                  if( currentAverageOffset < MIN_OFFSET )
+                  {
+                    int speedupSpeed = ceil( (MIN_OFFSET - playbackTimeOffsetMSec) / 4.0 );
+                    SetSpeed( DVD_PLAYSPEED_NORMAL + speedupSpeed ); // speedupSpeed SHOULD BE BETWEEN 1 and 7
+                    //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- SPEED FAST %f %d\n", MIN_OFFSET - playbackTimeOffsetMSec, speedupSpeed ); // DEBUG!
+                  }
+                  else
+                  {
+                    SetSpeed( DVD_PLAYSPEED_NORMAL );
+                    //printf( "(OMXPLAYER) &&&&&&&&&&&&&&&&&&--- SPEED NORMAL\n" ); // DEBUG!
+                  }
+                }
+              }
+            }
+          } //*/
+
+          // QUIT OMXPLAYER IF PAST END OF SCHEDULED VIDEO...          
+          const long long VIDEO_EARLY_ENDING_MSEC = 20;
+          //const long long VIDEO_EARLY_ENDING_MSEC = 100;
+          long long videoEndTime = videoStartTime + videoLength - VIDEO_EARLY_ENDING_MSEC;
+          //long long videoEndTime = (mediaTime/1000) + videoStartTime + videoLength;
+          //printf( "CURRENT TIME: %lld  videoEndTime: %lld\n", getCurrentTimeMSec(), videoEndTime );
+          //const int EARLY_VIDEO_CUTOFF_MSEC = 100; // DEBUG VALUE TO TEST HOW MUCH GAP IS NEEDED, PROBABLY SHOULD BE ZERO
+          const int EARLY_VIDEO_CUTOFF_MSEC = 0; // DEBUG VALUE TO TEST HOW MUCH GAP IS NEEDED, PROBABLY SHOULD BE ZERO
+          if( m_seamless_loop == false  &&  (videoEndTime - EARLY_VIDEO_CUTOFF_MSEC) < getCurrentTimeMSec() )
+          {
+            //printf( ":::~~~:::~~~:::~~~ STOPPED........................................\n" );
+            //printf( "MEDIA TIME: %f\n", mediaTimeUSec );
+            timelineState = STATE_FINISHED_PLAYING;
+            videoPositionChanged = true;
+
+            // SKIP LAST STATE?
+            update = true;
+            m_stop = true;
+            goto do_exit;
+          } //*/
+          
+        } // IF videoStartTime NOT ZERO
+
+        break;
+      }
+        
+      //____________________________________________________________________________
+      case STATE_FINISHED_PLAYING: //----------------------------------
+      // THIS IS PROBABLY NOT NEEDED, BUT KEEPING IT NOW JUST IN CASE AN END STATE IS NEEDED
+      {
+        update = true;
+        m_stop = true;
+        goto do_exit; // ------------------> JUMP TO END OF LOOP
+        break;
+      }
+      
+    } // SWITCH -----------------
+    
+    
+    // HIDE VIDEO OFF-SCREEN EXCEPT WHEN IT'S SCHEDULED TO PLAY...
+    if( m_has_video == true  &&  videoPositionChanged == true )
+    //if( 0 ) // DEBUG!!!!!!!!!!!!!!!!
+    {
+      CRect newVideoPosition;    
+      videoPositionChanged = false;
+      if( timelineState == STATE_PLAYING ) // <---------- NORMAL
+      {
+        // MOVE VIDEO TO CORRECT POSITION WHEN PLAYING...
+        newVideoPosition.x1 = storedVideo.x1;
+        newVideoPosition.y1 = storedVideo.y1;
+        newVideoPosition.x2 = storedVideo.x2;
+        newVideoPosition.y2 = storedVideo.y2;
+
+        m_config_video.dst_rect = newVideoPosition;
+
+        AspectMode currentAspectMode = ASPECT_LETTERBOX;
+        switch( m_config_video.aspectMode )
+        {
+          case 0: currentAspectMode = ASPECT_LETTERBOX; break; // UNCLEAR WHAT THE VALUE ZERO MEANS, BUT WE'RE TREATING IT AS LETTERBOX
+          case 1: currentAspectMode = ASPECT_LETTERBOX; break; // THIS IS THE REAL LETTERBOX
+          case 2: currentAspectMode = ASPECT_NATURAL; break;
+          case 3: currentAspectMode = ASPECT_STRETCH; break;
+        } //*/
+        float scaleFactor = 1.00;
+        // IF MENU IS OPEN (THIS SHOULD ALWAYS WORK FOR NOW, BUT ISN'T IDEAL)...
+        if( storedVideo.y2 - storedVideo.y1 < 450 )
+           scaleFactor = 0.3;
+      
+        // SETUP SOURCE FRAME AND SWAP HEIGHT/WIDTH WHEN ROTATED...        
+        WindowFrame sourceFrame = { 0, 0, m_config_video.hints.width, m_config_video.hints.height };
+        //printf( "(OMXPLAYER) ORIENTATION: %d \n", m_orientation );
+        if( m_orientation == 90  ||  m_orientation == 270 )        
+          sourceFrame = { 0, 0, m_config_video.hints.height, m_config_video.hints.width };
+
+        // CALCULATED SOURCE AND DEST FRAMES BASED ON ASPECT MODE
+        WindowFrame adjustedSourceRect = getSourceCopyRect( sourceFrame, WindowFrame(newVideoPosition), currentAspectMode, scaleFactor );
+        WindowFrame adjustedDestRect = getDestCopyRect( sourceFrame, WindowFrame(newVideoPosition), currentAspectMode, scaleFactor );
+
+        // ADJUST SOURCE AND DEST FRAMES BASED ON VIDEO WALL SETTINGS
+        WindowFrame finalSourceRect = getVideoWallSourceRect( adjustedSourceRect, adjustedDestRect, WindowFrame( storedVideo ), videoWallConfig );
+        WindowFrame finalDestRect = getVideoWallDestRect( adjustedSourceRect, adjustedDestRect, WindowFrame( storedVideo ), videoWallConfig );
+
+        m_config_video.src_rect = finalSourceRect.getCRect();
+        m_config_video.dst_rect = finalDestRect.getCRect(); 
+
+        if( m_orientation == 90  ||  m_orientation == 270 )        
+        {
+          int temp1 = m_config_video.src_rect.x1;
+          int temp2 = m_config_video.src_rect.x2;
+          m_config_video.src_rect.x1 = m_config_video.src_rect.y1;
+          m_config_video.src_rect.x2 = m_config_video.src_rect.y2;
+          m_config_video.src_rect.y1 = temp1;
+          m_config_video.src_rect.y2 = temp2;
+        } 
+
+        m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
+        m_player_subtitles.SetSubtitleRect(m_config_video.dst_rect.x1, m_config_video.dst_rect.y1, m_config_video.dst_rect.x2, m_config_video.dst_rect.y2); //*/
+      }
+      else 
+      {
+        // MOVE VIDEO OFF SCREEN WHEN PRELOADING...
+        newVideoPosition.x1 = OFFSCREEN_X1; // SET PRELOADING VIDEO WINDOW OFF-SCREEN
+        newVideoPosition.y1 = OFFSCREEN_Y1;
+        newVideoPosition.x2 = OFFSCREEN_X2;
+        newVideoPosition.y2 = OFFSCREEN_Y2; 
+
+        m_config_video.dst_rect = newVideoPosition;
+
+        m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
+        m_player_subtitles.SetSubtitleRect(m_config_video.dst_rect.x1, m_config_video.dst_rect.y1, m_config_video.dst_rect.x2, m_config_video.dst_rect.y2); //*/ 
+      }
+
+    }
+    //*/
+   
+    // *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + 
+    //  + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + **
+    // *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + *** + 
+    // /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+
+
+  
     if(g_abort)
       goto do_exit;
 
+		// LIMITS HOW FAST "UPDATES" HAPPEN (I ASSUME AN UPDATE IS A FRAME?)...
+		// MOST OF THE CODE AFTER THIS IS SKIPPED UNLESS "update" IS TRUE.
+		// ..THIS SEEMS TO BE UPDATING AT 50FPS (20MSEC)
     double now = m_av_clock->GetAbsoluteClock();
-    bool update = false;
     if (m_last_check_time == 0.0 || m_last_check_time + DVD_MSEC_TO_TIME(20) <= now) 
     {
       update = true;
       m_last_check_time = now;
     }
 
-     if (update) {
+
+		// PROCESS INCOMING KEYBOARD OR DBUS COMMANDS...
+    if (update) {
        OMXControlResult result = control_err
                                ? (OMXControlResult)(m_keyboard ? m_keyboard->getEvent() : KeyConfig::ACTION_BLANK)
                                : m_omxcontrol.getEvent();
        double oldPos, newPos;
 
-    switch(result.getKey())
-    {
-      case KeyConfig::ACTION_SHOW_INFO:
-        m_tv_show_info = !m_tv_show_info;
-        vc_tv_show_info(m_tv_show_info);
-        break;
-      case KeyConfig::ACTION_DECREASE_SPEED:
-        if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
-          playspeed_current = playspeed_slow_max-1;
-        playspeed_current = std::max(playspeed_current-1, playspeed_slow_min);
-        SetSpeed(playspeeds[playspeed_current]);
-        DISPLAY_TEXT_SHORT(
-          strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
-        printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
-        m_Pause = false;
-        break;
-      case KeyConfig::ACTION_INCREASE_SPEED:
-        if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
-          playspeed_current = playspeed_slow_max-1;
-        playspeed_current = std::min(playspeed_current+1, playspeed_slow_max);
-        SetSpeed(playspeeds[playspeed_current]);
-        DISPLAY_TEXT_SHORT(
-          strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
-        printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
-        m_Pause = false;
-        break;
-      case KeyConfig::ACTION_REWIND:
-        if (playspeed_current >= playspeed_ff_min && playspeed_current <= playspeed_ff_max)
-        {
-          playspeed_current = playspeed_normal;
-          m_seek_flush = true;
-        }
-        else if (playspeed_current < playspeed_rew_max || playspeed_current > playspeed_rew_min)
-          playspeed_current = playspeed_rew_min;
-        else
-          playspeed_current = std::max(playspeed_current-1, playspeed_rew_max);
-        SetSpeed(playspeeds[playspeed_current]);
-        DISPLAY_TEXT_SHORT(
-          strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
-        printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
-        m_Pause = false;
-        break;
-      case KeyConfig::ACTION_FAST_FORWARD:
-        if (playspeed_current >= playspeed_rew_max && playspeed_current <= playspeed_rew_min)
-        {
-          playspeed_current = playspeed_normal;
-          m_seek_flush = true;
-        }
-        else if (playspeed_current < playspeed_ff_min || playspeed_current > playspeed_ff_max)
-          playspeed_current = playspeed_ff_min;
-        else
-          playspeed_current = std::min(playspeed_current+1, playspeed_ff_max);
-        SetSpeed(playspeeds[playspeed_current]);
-        DISPLAY_TEXT_SHORT(
-          strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
-        printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
-        m_Pause = false;
-        break;
-      case KeyConfig::ACTION_STEP:
-        m_av_clock->OMXStep();
-        printf("Step\n");
-        {
-          auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-3);
-          auto dur = m_omx_reader.GetStreamLength() / 1000;
-          DISPLAY_TEXT_SHORT(
-            strprintf("Step\n%02d:%02d:%02d.%03d / %02d:%02d:%02d",
-              (t/3600000), (t/60000)%60, (t/1000)%60, t%1000,
-              (dur/3600), (dur/60)%60, dur%60));
-        }
-        break;
-      case KeyConfig::ACTION_PREVIOUS_AUDIO:
-        if(m_has_audio)
-        {
-          int new_index = m_omx_reader.GetAudioIndex() - 1;
-          if(new_index >= 0)
+      // HUGE SWITCH STATEMENT FOR ALL THE "KEY" COMMANDS (WHICH ACTUALLY MAY BE GENERATED BY DBUS *OR* KEYBOARD)...
+      switch(result.getKey())
+      {
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_SHOW_INFO:
+          m_tv_show_info = !m_tv_show_info; 
+          vc_tv_show_info(m_tv_show_info);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_PREVIOUS_AUDIO:
+          if(m_has_audio)
           {
-            m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, new_index);
+            int new_index = m_omx_reader.GetAudioIndex() - 1;
+            if(new_index >= 0)
+            {
+              m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, new_index);
+              DISPLAY_TEXT_SHORT(
+                strprintf("Audio stream: %d", m_omx_reader.GetAudioIndex() + 1));
+            }
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_NEXT_AUDIO:
+          if(m_has_audio)
+          {
+            m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, m_omx_reader.GetAudioIndex() + 1);
             DISPLAY_TEXT_SHORT(
               strprintf("Audio stream: %d", m_omx_reader.GetAudioIndex() + 1));
           }
-        }
-        break;
-      case KeyConfig::ACTION_NEXT_AUDIO:
-        if(m_has_audio)
-        {
-          m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, m_omx_reader.GetAudioIndex() + 1);
-          DISPLAY_TEXT_SHORT(
-            strprintf("Audio stream: %d", m_omx_reader.GetAudioIndex() + 1));
-        }
-        break;
-      case KeyConfig::ACTION_PREVIOUS_CHAPTER:
-        if(m_omx_reader.GetChapterCount() > 0)
-        {
-          m_omx_reader.SeekChapter(m_omx_reader.GetChapter() - 1, &startpts);
-          DISPLAY_TEXT_LONG(strprintf("Chapter %d", m_omx_reader.GetChapter()));
-          FlushStreams(startpts);
-          m_seek_flush = true;
-          m_chapter_seek = true;
-        }
-        else
-        {
-          m_incr = -600.0;
-        }
-        break;
-      case KeyConfig::ACTION_NEXT_CHAPTER:
-        if(m_omx_reader.GetChapterCount() > 0)
-        {
-          m_omx_reader.SeekChapter(m_omx_reader.GetChapter() + 1, &startpts);
-          DISPLAY_TEXT_LONG(strprintf("Chapter %d", m_omx_reader.GetChapter()));
-          FlushStreams(startpts);
-          m_seek_flush = true;
-          m_chapter_seek = true;
-        }
-        else
-        {
-          m_incr = 600.0;
-        }
-        break;
-      case KeyConfig::ACTION_PREVIOUS_SUBTITLE:
-        if(m_has_subtitle)
-        {
-          if(!m_player_subtitles.GetUseExternalSubtitles())
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_PREVIOUS_CHAPTER:
+          if(m_omx_reader.GetChapterCount() > 0)
           {
-            if (m_player_subtitles.GetActiveStream() == 0)
+            m_omx_reader.SeekChapter(m_omx_reader.GetChapter() - 1, &startpts);
+            DISPLAY_TEXT_LONG(strprintf("Chapter %d", m_omx_reader.GetChapter()));
+            FlushStreams(startpts);
+            m_seek_flush = true;
+            m_chapter_seek = true;
+          }
+          else
+          {
+            m_incr = -600.0;
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_NEXT_CHAPTER:
+          if(m_omx_reader.GetChapterCount() > 0)
+          {
+            m_omx_reader.SeekChapter(m_omx_reader.GetChapter() + 1, &startpts);
+            DISPLAY_TEXT_LONG(strprintf("Chapter %d", m_omx_reader.GetChapter()));
+            FlushStreams(startpts);
+            m_seek_flush = true;
+            m_chapter_seek = true;
+          }
+          else
+          {
+            m_incr = 600.0;
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_PREVIOUS_SUBTITLE:
+          if(m_has_subtitle)
+          {
+            if(!m_player_subtitles.GetUseExternalSubtitles())
             {
-              if(m_has_external_subtitles)
+              if (m_player_subtitles.GetActiveStream() == 0)
               {
-                DISPLAY_TEXT_SHORT("Subtitle file:\n" + m_external_subtitles_path);
-                m_player_subtitles.SetUseExternalSubtitles(true);
+                if(m_has_external_subtitles)
+                {
+                  DISPLAY_TEXT_SHORT("Subtitle file:\n" + m_external_subtitles_path);
+                  m_player_subtitles.SetUseExternalSubtitles(true);
+                }
+              }
+              else
+              {
+                auto new_index = m_player_subtitles.GetActiveStream()-1;
+                DISPLAY_TEXT_SHORT(strprintf("Subtitle stream: %d", new_index+1));
+                m_player_subtitles.SetActiveStream(new_index);
+              }
+            }
+
+            m_player_subtitles.SetVisible(true);
+            PrintSubtitleInfo();
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_NEXT_SUBTITLE:
+          if(m_has_subtitle)
+          {
+            if(m_player_subtitles.GetUseExternalSubtitles())
+            {
+              if(m_omx_reader.SubtitleStreamCount())
+              {
+                assert(m_player_subtitles.GetActiveStream() == 0);
+                DISPLAY_TEXT_SHORT("Subtitle stream: 1");
+                m_player_subtitles.SetUseExternalSubtitles(false);
               }
             }
             else
             {
-              auto new_index = m_player_subtitles.GetActiveStream()-1;
-              DISPLAY_TEXT_SHORT(strprintf("Subtitle stream: %d", new_index+1));
-              m_player_subtitles.SetActiveStream(new_index);
+              auto new_index = m_player_subtitles.GetActiveStream()+1;
+              if(new_index < (size_t) m_omx_reader.SubtitleStreamCount())
+              {
+                DISPLAY_TEXT_SHORT(strprintf("Subtitle stream: %d", new_index+1));
+                m_player_subtitles.SetActiveStream(new_index);
+              }
             }
-          }
 
-          m_player_subtitles.SetVisible(true);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_NEXT_SUBTITLE:
-        if(m_has_subtitle)
-        {
-          if(m_player_subtitles.GetUseExternalSubtitles())
-          {
-            if(m_omx_reader.SubtitleStreamCount())
-            {
-              assert(m_player_subtitles.GetActiveStream() == 0);
-              DISPLAY_TEXT_SHORT("Subtitle stream: 1");
-              m_player_subtitles.SetUseExternalSubtitles(false);
-            }
+            m_player_subtitles.SetVisible(true);
+            PrintSubtitleInfo();
           }
-          else
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_TOGGLE_SUBTITLE:
+          if(m_has_subtitle)
           {
-            auto new_index = m_player_subtitles.GetActiveStream()+1;
-            if(new_index < (size_t) m_omx_reader.SubtitleStreamCount())
-            {
-              DISPLAY_TEXT_SHORT(strprintf("Subtitle stream: %d", new_index+1));
-              m_player_subtitles.SetActiveStream(new_index);
-            }
+            m_player_subtitles.SetVisible(!m_player_subtitles.GetVisible());
+            PrintSubtitleInfo();
           }
-
-          m_player_subtitles.SetVisible(true);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_TOGGLE_SUBTITLE:
-        if(m_has_subtitle)
-        {
-          m_player_subtitles.SetVisible(!m_player_subtitles.GetVisible());
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_HIDE_SUBTITLES:
-        if(m_has_subtitle)
-        {
-          m_player_subtitles.SetVisible(false);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_SHOW_SUBTITLES:
-        if(m_has_subtitle)
-        {
-          m_player_subtitles.SetVisible(true);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_DECREASE_SUBTITLE_DELAY:
-        if(m_has_subtitle && m_player_subtitles.GetVisible())
-        {
-          auto new_delay = m_player_subtitles.GetDelay() - 250;
-          DISPLAY_TEXT_SHORT(strprintf("Subtitle delay: %d ms", new_delay));
-          m_player_subtitles.SetDelay(new_delay);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_INCREASE_SUBTITLE_DELAY:
-        if(m_has_subtitle && m_player_subtitles.GetVisible())
-        {
-          auto new_delay = m_player_subtitles.GetDelay() + 250;
-          DISPLAY_TEXT_SHORT(strprintf("Subtitle delay: %d ms", new_delay));
-          m_player_subtitles.SetDelay(new_delay);
-          PrintSubtitleInfo();
-        }
-        break;
-      case KeyConfig::ACTION_EXIT:
-        m_stop = true;
-        goto do_exit;
-        break;
-      case KeyConfig::ACTION_SEEK_BACK_SMALL:
-        if(m_omx_reader.CanSeek()) m_incr = -30.0;
-        break;
-      case KeyConfig::ACTION_SEEK_FORWARD_SMALL:
-        if(m_omx_reader.CanSeek()) m_incr = 30.0;
-        break;
-      case KeyConfig::ACTION_SEEK_FORWARD_LARGE:
-        if(m_omx_reader.CanSeek()) m_incr = 600.0;
-        break;
-      case KeyConfig::ACTION_SEEK_BACK_LARGE:
-        if(m_omx_reader.CanSeek()) m_incr = -600.0;
-        break;
-      case KeyConfig::ACTION_SEEK_RELATIVE:
-          m_incr = result.getArg() * 1e-6;
           break;
-      case KeyConfig::ACTION_SEEK_ABSOLUTE:
-          newPos = result.getArg() * 1e-6;
-          oldPos = m_av_clock->OMXMediaTime()*1e-6;
-          m_incr = newPos - oldPos;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_HIDE_SUBTITLES:
+          if(m_has_subtitle)
+          {
+            m_player_subtitles.SetVisible(false);
+            PrintSubtitleInfo();
+          }
           break;
-      case KeyConfig::ACTION_SET_ALPHA:
-          m_player_video.SetAlpha(result.getArg());
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_SHOW_SUBTITLES:
+          if(m_has_subtitle)
+          {
+            m_player_subtitles.SetVisible(true);
+            PrintSubtitleInfo();
+          }
           break;
-      case KeyConfig::ACTION_PLAY:
-        m_Pause=false;
-        if(m_has_subtitle)
-        {
-          m_player_subtitles.Resume();
-        }
-        break;
-      case KeyConfig::ACTION_PAUSE:
-        m_Pause=true;
-        if(m_has_subtitle)
-        {
-          m_player_subtitles.Pause();
-        }
-        break;
-      case KeyConfig::ACTION_PLAYPAUSE:
-        m_Pause = !m_Pause;
-        if (m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_NORMAL && m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_PAUSE)
-        {
-          printf("resume\n");
-          playspeed_current = playspeed_normal;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_DECREASE_SUBTITLE_DELAY:
+          if(m_has_subtitle && m_player_subtitles.GetVisible())
+          {
+            auto new_delay = m_player_subtitles.GetDelay() - 250;
+            DISPLAY_TEXT_SHORT(strprintf("Subtitle delay: %d ms", new_delay));
+            m_player_subtitles.SetDelay(new_delay);
+            PrintSubtitleInfo();
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_INCREASE_SUBTITLE_DELAY:
+          if(m_has_subtitle && m_player_subtitles.GetVisible())
+          {
+            auto new_delay = m_player_subtitles.GetDelay() + 250;
+            DISPLAY_TEXT_SHORT(strprintf("Subtitle delay: %d ms", new_delay));
+            m_player_subtitles.SetDelay(new_delay);
+            PrintSubtitleInfo();
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_EXIT:
+          m_stop = true;
+          goto do_exit;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_DECREASE_SPEED:
+          if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
+            playspeed_current = playspeed_slow_max-1;
+          playspeed_current = std::max(playspeed_current-1, playspeed_slow_min);
           SetSpeed(playspeeds[playspeed_current]);
-          m_seek_flush = true;
-        }
-        if(m_Pause)
-        {
-          if(m_has_subtitle)
-            m_player_subtitles.Pause();
-
-          auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-6);
-          auto dur = m_omx_reader.GetStreamLength() / 1000;
-          DISPLAY_TEXT_LONG(strprintf("Pause\n%02d:%02d:%02d / %02d:%02d:%02d",
-            (t/3600), (t/60)%60, t%60, (dur/3600), (dur/60)%60, dur%60));
-        }
-        else
-        {
-          if(m_has_subtitle)
-            m_player_subtitles.Resume();
-
-          auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-6);
-          auto dur = m_omx_reader.GetStreamLength() / 1000;
-          DISPLAY_TEXT_SHORT(strprintf("Play\n%02d:%02d:%02d / %02d:%02d:%02d",
-            (t/3600), (t/60)%60, t%60, (dur/3600), (dur/60)%60, dur%60));
-        }
-        break;
-      case KeyConfig::ACTION_MOVE_VIDEO:
-        sscanf(result.getWinArg(), "%f %f %f %f", &m_config_video.dst_rect.x1, &m_config_video.dst_rect.y1, &m_config_video.dst_rect.x2, &m_config_video.dst_rect.y2);
-        m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
-        m_player_subtitles.SetSubtitleRect(m_config_video.dst_rect.x1, m_config_video.dst_rect.y1, m_config_video.dst_rect.x2, m_config_video.dst_rect.y2);
-        break;
-      case KeyConfig::ACTION_CROP_VIDEO:
-        sscanf(result.getWinArg(), "%f %f %f %f", &m_config_video.src_rect.x1, &m_config_video.src_rect.y1, &m_config_video.src_rect.x2, &m_config_video.src_rect.y2);
-        m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
-        break;
-      case KeyConfig::ACTION_HIDE_VIDEO:
-        // set alpha to minimum
-        m_player_video.SetAlpha(0);
-        break;
-      case KeyConfig::ACTION_UNHIDE_VIDEO:
-        // set alpha to maximum
-        m_player_video.SetAlpha(255);
-        break;
-      case KeyConfig::ACTION_SET_ASPECT_MODE:
-        if (result.getWinArg()) {
-          if (!strcasecmp(result.getWinArg(), "letterbox"))
-            m_config_video.aspectMode = 1;
-          else if (!strcasecmp(result.getWinArg(), "fill"))
-            m_config_video.aspectMode = 2;
-          else if (!strcasecmp(result.getWinArg(), "stretch"))
-            m_config_video.aspectMode = 3;
+          DISPLAY_TEXT_SHORT(
+            strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
+          printf("(OMXPLAYER) Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
+          m_Pause = false;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_INCREASE_SPEED:
+          if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
+            playspeed_current = playspeed_slow_max-1;
+          playspeed_current = std::min(playspeed_current+1, playspeed_slow_max);
+          SetSpeed(playspeeds[playspeed_current]);
+          DISPLAY_TEXT_SHORT(
+            strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
+          printf("(OMXPLAYER) Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
+          m_Pause = false;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_REWIND:
+          if (playspeed_current >= playspeed_ff_min && playspeed_current <= playspeed_ff_max)
+          {
+            playspeed_current = playspeed_normal;
+            m_seek_flush = true;
+          }
+          else if (playspeed_current < playspeed_rew_max || playspeed_current > playspeed_rew_min)
+            playspeed_current = playspeed_rew_min;
           else
-            m_config_video.aspectMode = 0;
-          m_player_video.SetVideoRect(m_config_video.aspectMode);
-        }
-        break;
-      case KeyConfig::ACTION_DECREASE_VOLUME:
-        m_Volume -= 300;
-        m_player_audio.SetVolume(pow(10, m_Volume / 2000.0));
-        DISPLAY_TEXT_SHORT(strprintf("Volume: %.2f dB",
-          m_Volume / 100.0f));
-        printf("Current Volume: %.2fdB\n", m_Volume / 100.0f);
-        break;
-      case KeyConfig::ACTION_INCREASE_VOLUME:
-        m_Volume += 300;
-        m_player_audio.SetVolume(pow(10, m_Volume / 2000.0));
-        DISPLAY_TEXT_SHORT(strprintf("Volume: %.2f dB",
-          m_Volume / 100.0f));
-        printf("Current Volume: %.2fdB\n", m_Volume / 100.0f);
-        break;
-      default:
-        break;
-    }
-    }
+            playspeed_current = std::max(playspeed_current-1, playspeed_rew_max);
+          SetSpeed(playspeeds[playspeed_current]);
+          DISPLAY_TEXT_SHORT(
+            strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
+          printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
+          m_Pause = false;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_FAST_FORWARD:
+          if (playspeed_current >= playspeed_rew_max && playspeed_current <= playspeed_rew_min)
+          {
+            playspeed_current = playspeed_normal;
+            m_seek_flush = true;
+          }
+          else if (playspeed_current < playspeed_ff_min || playspeed_current > playspeed_ff_max)
+            playspeed_current = playspeed_ff_min;
+          else
+            playspeed_current = std::min(playspeed_current+1, playspeed_ff_max);
+          SetSpeed(playspeeds[playspeed_current]);
+          DISPLAY_TEXT_SHORT(
+            strprintf("Playspeed: %.3f", playspeeds[playspeed_current]/1000.0f));
+          printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
+          m_Pause = false;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_STEP:
+          m_av_clock->OMXStep(); // <--- TELL CLOCK TO STEP
+          printf("Step\n");
+          {
+            auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-3);
+            auto dur = m_omx_reader.GetStreamLength() / 1000;
+            DISPLAY_TEXT_SHORT(
+              strprintf("Step\n%02d:%02d:%02d.%03d / %02d:%02d:%02d",
+                (t/3600000), (t/60000)%60, (t/1000)%60, t%1000,
+                (dur/3600), (dur/60)%60, dur%60));
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_BACK_SMALL:
+          if(m_omx_reader.CanSeek()) m_incr = -30.0;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_FORWARD_SMALL:
+          if(m_omx_reader.CanSeek()) m_incr = 30.0;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_FORWARD_LARGE:
+          if(m_omx_reader.CanSeek()) m_incr = 600.0;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_BACK_LARGE:
+          if(m_omx_reader.CanSeek()) m_incr = -600.0;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_RELATIVE:
+            m_incr = result.getArg() * 1e-6;
+            break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SEEK_ABSOLUTE:
+            newPos = result.getArg() * 1e-6;
+            oldPos = m_av_clock->OMXMediaTime()*1e-6;
+            m_incr = newPos - oldPos;
+            break;
 
+  #pragma mark SET PLAYLIST START TIME
+        // ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ 
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SET_PLAYLIST_START_TIME:
+	  			// MY NEW DBUS COMMAND TO SET THE PLAYLIST_START_TIME
+          printf( "(OMXPLAYER) ACTION_SET_PLAYLIST_START_TIME T R I G G E R E D\n" );
+          printf( "(OMXPLAYER) X X X X X X X X X X X X X X X X X X X X X X X X \n" );
+          playlistStartTimeMSec = result.getArg();	
+          syncEnabled = true;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_SET_SYNC_MODE:
+	  			// MY NEW DBUS COMMAND TO SET THE SYNC MODE
+          printf( "(OMXPLAYER) ACTION_SET_SYNC_MODE T R I G G E R E D\n" );
+          if( result.getArg() == 0 )
+            syncEnabled = false;
+          else
+            syncEnabled = true;
+          //syncEnabled = result.getArg();
+          break;
+        // ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ ~~ ^ 
+        
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_PLAY:
+          m_Pause=false;
+          if(m_has_subtitle)
+          {
+            m_player_subtitles.Resume();
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_PAUSE:
+          m_Pause=true;
+          if(m_has_subtitle)
+          {
+            m_player_subtitles.Pause();
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      	// |- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -||- -|
+        case KeyConfig::ACTION_PLAYPAUSE:
+          m_Pause = !m_Pause;
+          if (m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_NORMAL && m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_PAUSE)
+          {
+            printf("(OMXPLAYER) resume\n");
+            playspeed_current = playspeed_normal;
+            SetSpeed(playspeeds[playspeed_current]);
+            m_seek_flush = true;
+          }
+          if(m_Pause)
+          { 
+            if(m_has_subtitle)
+              m_player_subtitles.Pause(); 
+
+            auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-6);
+            auto dur = m_omx_reader.GetStreamLength() / 1000;
+            DISPLAY_TEXT_LONG(strprintf("Pause\n%02d:%02d:%02d / %02d:%02d:%02d",
+              (t/3600), (t/60)%60, t%60, (dur/3600), (dur/60)%60, dur%60));
+          }
+          else 
+          {
+            if(m_has_subtitle)
+              m_player_subtitles.Resume();
+
+            auto t = (unsigned) (m_av_clock->OMXMediaTime()*1e-6);
+            auto dur = m_omx_reader.GetStreamLength() / 1000;
+            DISPLAY_TEXT_SHORT(strprintf("Play\n%02d:%02d:%02d / %02d:%02d:%02d",
+              (t/3600), (t/60)%60, t%60, (dur/3600), (dur/60)%60, dur%60));
+          }
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_SET_ALPHA:
+            m_player_video.SetAlpha(result.getArg());
+            break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_MOVE_VIDEO:
+          sscanf(result.getWinArg(), "%f %f %f %f", &storedVideo.x1, &storedVideo.y1, &storedVideo.x2, &storedVideo.y2);
+          videoPositionChanged = true;
+          //sscanf(result.getWinArg(), "%f %f %f %f", &m_config_video.dst_rect.x1, &m_config_video.dst_rect.y1, &m_config_video.dst_rect.x2, &m_config_video.dst_rect.y2);
+          //m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
+          //m_player_subtitles.SetSubtitleRect(m_config_video.dst_rect.x1, m_config_video.dst_rect.y1, m_config_video.dst_rect.x2, m_config_video.dst_rect.y2);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_CROP_VIDEO:
+          sscanf(result.getWinArg(), "%f %f %f %f", &m_config_video.src_rect.x1, &m_config_video.src_rect.y1, &m_config_video.src_rect.x2, &m_config_video.src_rect.y2);
+          m_player_video.SetVideoRect(m_config_video.src_rect, m_config_video.dst_rect);
+          videoPositionChanged = true;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_HIDE_VIDEO:
+          // set alpha to minimum
+          m_player_video.SetAlpha(0);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_UNHIDE_VIDEO:
+          // set alpha to maximum
+          m_player_video.SetAlpha(255);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_SET_ASPECT_MODE:
+          if (result.getWinArg()) {
+            if (!strcasecmp(result.getWinArg(), "letterbox"))
+              m_config_video.aspectMode = 1;
+            else if (!strcasecmp(result.getWinArg(), "fill"))
+              m_config_video.aspectMode = 2;
+            else if (!strcasecmp(result.getWinArg(), "stretch"))
+              m_config_video.aspectMode = 3;
+            else
+              m_config_video.aspectMode = 0;
+            m_player_video.SetVideoRect(m_config_video.aspectMode);
+          }
+          videoPositionChanged = true;
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_DECREASE_VOLUME:
+          m_Volume -= 300;
+          m_player_audio.SetVolume(pow(10, m_Volume / 2000.0));
+          DISPLAY_TEXT_SHORT(strprintf("Volume: %.2f dB",
+            m_Volume / 100.0f));
+          printf("(OMXPLAYER) Current Volume: %.2fdB\n", m_Volume / 100.0f);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        case KeyConfig::ACTION_INCREASE_VOLUME:
+          m_Volume += 300;
+          m_player_audio.SetVolume(pow(10, m_Volume / 2000.0));
+          DISPLAY_TEXT_SHORT(strprintf("Volume: %.2f dB",
+            m_Volume / 100.0f));
+          printf("(OMXPLAYER) Current Volume: %.2fdB\n", m_Volume / 100.0f);
+          break;
+      	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        default:
+          break;
+      } // SWITCH FOR KEY COMMANDS
+    } // IF UPDATE
+    //--------------------------------------------------------------------------------------------------------
+
+		// SLEEP IF IDLE (I ASSUME IDLE MEANS NOT PLAYING??)...
     if (idle)
     {
       usleep(10000);
       continue;
     }
 
-    if(m_seek_flush || m_incr != 0)
+    //---------------------------------------------------------------------------------------------------
+		// RESPOND TO COMMANDS FROM THE SYNC THREAD...    
+    /*switch( syncCommand )
+    {
+    	case SYNC_PLAY:
+				m_av_clock->OMXResume();
+				m_Pause = false;
+    		break;
+    	case SYNC_PAUSE:
+				m_av_clock->OMXPause();
+				m_Pause = true;
+				syncCommand = SYNC_NO_COMMAND;
+    		break;
+    	case SYNC_NO_COMMAND:
+    		break;
+    } //*/
+    
+		// HANDLE SEEK ('m_incr' INDICATES THE SEEK AMOUNT/DIRECTION IN FLOAT SECONDS)...
+    if(m_seek_flush || m_incr != 0) 
     {
       double seek_pos     = 0;
       double pts          = 0;
@@ -1549,13 +1442,14 @@ int main(int argc, char *argv[])
 
         seek_pos *= 1000.0;
 
+				// SEEK THE READER TO THE GIVEN POSITION...
         if(m_omx_reader.SeekTime((int)seek_pos, m_incr < 0.0f, &startpts))
         {
           unsigned t = (unsigned)(startpts*1e-6);
           auto dur = m_omx_reader.GetStreamLength() / 1000;
           DISPLAY_TEXT_LONG(strprintf("Seek\n%02d:%02d:%02d / %02d:%02d:%02d",
               (t/3600), (t/60)%60, t%60, (dur/3600), (dur/60)%60, dur%60));
-          printf("Seek to: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
+          printf("(OMXPLAYER) Seek to: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
           FlushStreams(startpts);
         }
       }
@@ -1563,14 +1457,15 @@ int main(int argc, char *argv[])
       sentStarted = false;
 
       if (m_omx_reader.IsEof())
-        goto do_exit;
+        goto do_exit;  
 
       // Quick reset to reduce delay during loop & seek.
       if (m_has_video && !m_player_video.Reset())
         goto do_exit;
 
-      CLog::Log(LOGDEBUG, "Seeked %.0f %.0f %.0f\n", DVD_MSEC_TO_TIME(seek_pos), startpts, m_av_clock->OMXMediaTime());
+      CLog::Log(LOGDEBUG, "(OMXPLAYER) Seeked %.0f %.0f %.0f\n", DVD_MSEC_TO_TIME(seek_pos), startpts, m_av_clock->OMXMediaTime());
 
+			// UNCLEAR WHY THERE'S ANOTHER PAUSE COMMAND HERE?? (THIS IS NOT A TOGGLE, IT'S AN ACTUAL PAUSE)...
       m_av_clock->OMXPause();
 
       if(m_has_subtitle)
@@ -1578,9 +1473,13 @@ int main(int argc, char *argv[])
       m_packet_after_seek = false;
       m_seek_flush = false;
       m_incr = 0;
-    }
-    else if(m_packet_after_seek && TRICKPLAY(m_av_clock->OMXPlaySpeed()))
+    } // END OF SEEK SECTION ----/
+    else if(m_packet_after_seek && TRICKPLAY(m_av_clock->OMXPlaySpeed())) // TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/FAST FORWARD (NOT NORMAL PLAY)
     {
+    	// - - - - - - - - - - - - - - - - - - - - - - 
+    	// UNCLEAR WHAT THIS SECTION DOES...
+    	// IT ALSO SEEKS BUT I'M UNCLEAR WHY IT'S NEEDED IN ADDITION TO THE SEEK ABOVE
+    
       double seek_pos     = 0;
       double pts          = 0;
 
@@ -1589,6 +1488,7 @@ int main(int argc, char *argv[])
 
       seek_pos *= 1000.0;
 
+			// SEEK THE READER TO THE GIVEN POSITION...
       if(m_omx_reader.SeekTime((int)seek_pos, m_av_clock->OMXPlaySpeed() < 0, &startpts))
         ; //FlushStreams(DVD_NOPTS_VALUE);
 
@@ -1596,17 +1496,23 @@ int main(int argc, char *argv[])
 
       //unsigned t = (unsigned)(startpts*1e-6);
       unsigned t = (unsigned)(pts*1e-6);
-      printf("Seek to: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
+      printf("(OMXPLAYER) Seek to: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
       m_packet_after_seek = false;
-    }
+    } 
+    // END OF "SEEK" SECTION
+    //--------------------------------------------------------------------------
 
+		// ERROR HANDLING...
     /* player got in an error state */
     if(m_player_audio.Error())
     {
-      printf("audio player error. emergency exit!!!\n");
+      printf("(OMXPLAYER) audio player error. emergency exit!!!\n");
       goto do_exit;
     }
 
+#pragma mark AUDIO VIDEO BUFFERS
+		// ---------------------------------------------------------------
+		// CHECK/FILL/THROTTLE AUDIO AND VIDEO BUFFERS (?)
     if (update)
     {
       /* when the video/audio fifos are low, we pause clock, when high we resume */
@@ -1614,26 +1520,34 @@ int main(int argc, char *argv[])
       double audio_pts = m_player_audio.GetCurrentPTS();
       double video_pts = m_player_video.GetCurrentPTS();
 
+			// IF PAUSED...
       if (0 && m_av_clock->OMXIsPaused())
       {
+      	// CHOOSE WHETHER TO USE AUDIO OR VIDEO TIME AS TIMESTAMP BASED ON..?
         double old_stamp = stamp;
         if (audio_pts != DVD_NOPTS_VALUE && (stamp == 0 || audio_pts < stamp))
           stamp = audio_pts;
         if (video_pts != DVD_NOPTS_VALUE && (stamp == 0 || video_pts < stamp))
           stamp = video_pts;
+          
+        // IF THE TIME STAMP HAS CHANGED...
         if (old_stamp != stamp)
         {
+        	// SET THE MEDIA TIME, THEN GET THAT TIME AS THE TIMESTAMP?
           m_av_clock->OMXMediaTime(stamp);
           stamp = m_av_clock->OMXMediaTime();
         }
       }
 
+			// ???
       float audio_fifo = audio_pts == DVD_NOPTS_VALUE ? 0.0f : audio_pts / DVD_TIME_BASE - stamp * 1e-6;
       float video_fifo = video_pts == DVD_NOPTS_VALUE ? 0.0f : video_pts / DVD_TIME_BASE - stamp * 1e-6;
       float threshold = std::min(0.1f, (float)m_player_audio.GetCacheTotal() * 0.1f);
       bool audio_fifo_low = false, video_fifo_low = false, audio_fifo_high = false, video_fifo_high = false;
 
-      if(m_stats)
+      //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			// DEBUG DISPLAY OF DECODER STATS...
+      /*if(m_stats)
       {
         static int count;
         if ((count++ & 7) == 0)
@@ -1641,8 +1555,10 @@ int main(int argc, char *argv[])
                video_fifo, (m_player_video.GetDecoderBufferSize()-m_player_video.GetDecoderFreeSpace())>>10, m_player_video.GetDecoderBufferSize()>>10,
                audio_fifo, m_player_audio.GetDelay(), m_player_audio.GetCacheTotal(),
                m_player_video.GetCached()>>10, m_player_audio.GetCached()>>10);
-      }
-
+      } //*/
+      //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+			// DEBUG DISPLAY OF RENDERING FIFO INFORMATION...?
       if(m_tv_show_info)
       {
         static unsigned count;
@@ -1666,6 +1582,7 @@ int main(int argc, char *argv[])
         }
       }
 
+			// ???
       if (audio_pts != DVD_NOPTS_VALUE)
       {
         audio_fifo_low = m_has_audio && audio_fifo < threshold;
@@ -1718,6 +1635,7 @@ int main(int argc, char *argv[])
           }
         }
       }
+			// TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/FAST FORWARD (NOT NORMAL PLAY)
       else if(!m_Pause && (m_omx_reader.IsEof() || m_omx_pkt || TRICKPLAY(m_av_clock->OMXPlaySpeed()) || (audio_fifo_high && video_fifo_high)))
       {
         if (m_av_clock->OMXIsPaused())
@@ -1737,6 +1655,13 @@ int main(int argc, char *argv[])
         }
       }
     }
+    // END OF BUFFERS HANDLING SECTION
+    // --------------------------------------------------------------------------------
+
+    // LAST STUFF IN MAIN LOOP:
+    // -   -   -   -  -   -   -   - 
+
+		// "RESET" CLOCK IF NOT "SENT STARTED"...    
     if (!sentStarted)
     {
       CLog::Log(LOGDEBUG, "COMXPlayer::HandleMessages - player started RESET");
@@ -1744,90 +1669,120 @@ int main(int argc, char *argv[])
       sentStarted = true;
     }
 
+		// IF THERE'S NOT A PACKET THEN READ ONE...?
     if(!m_omx_pkt)
       m_omx_pkt = m_omx_reader.Read();
 
+		// IF THERE'S A PACKET THEN DON'T SEND END OF STREAM...
     if(m_omx_pkt)
       m_send_eos = false;
 
+		// IF WE'RE AT END OF FILE AND NO PACKET IS READ...
     if(m_omx_reader.IsEof() && !m_omx_pkt)
     {
+    	// WAIT FOR ANY DATA TO FINISH PLAYING OUT...
       // demuxer EOF, but may have not played out data yet
       if ( (m_has_video && m_player_video.GetCached()) ||
            (m_has_audio && m_player_audio.GetCached()) )
       {
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec);
         continue;
       }
+      
+      // SEND "END OF STREAM"
+      // I THINK THIS FLAG SHOULD BE NAMED "SENT" END OF STREAM (NOT "SEND")???...
       if (!m_send_eos && m_has_video)
         m_player_video.SubmitEOS();
       if (!m_send_eos && m_has_audio)
         m_player_audio.SubmitEOS();
       m_send_eos = true;
+      
+      // WAIT FOR END OF STREAM TO REGISTER/COMPLETE?...
       if ( (m_has_video && !m_player_video.IsEOS()) ||
            (m_has_audio && !m_player_audio.IsEOS()) )
       {
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec);
         continue;
       }
 
+			//*****************************************************************************************************
+			//*****************************************************************************************************
+			// IF LOOPING IS ENABLED THEN LOOP...
       if (m_loop)
       {
         m_incr = m_loop_from - (m_av_clock->OMXMediaTime() ? m_av_clock->OMXMediaTime() / DVD_TIME_BASE : last_seek_pos);
         continue;
       }
-
+			//*****************************************************************************************************
+			//*****************************************************************************************************
+			
+			// LOOP NOT SET SO BREAK OUT OF MAIN LOOP...------------------>>>
       break;
     }
 
+		// ADD THE NEXT PACKET TO THE VIDEO, AUDIO, AND SUBTITLE COMPONENTS...
     if(m_has_video && m_omx_pkt && m_omx_reader.IsActive(OMXSTREAM_VIDEO, m_omx_pkt->stream_index))
     {
-      if (TRICKPLAY(m_av_clock->OMXPlaySpeed()))
+			// TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/FAST FORWARD (NOT NORMAL PLAY)
+      if (TRICKPLAY(m_av_clock->OMXPlaySpeed())) // ADD VIDEO PACKET
       {
          m_packet_after_seek = true;
       }
       if(m_player_video.AddPacket(m_omx_pkt))
         m_omx_pkt = NULL;
       else
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec); // IF FAILED TO ADD PACKET THEN SLEEP 
     }
+		// TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/FAST FORWARD (NOT NORMAL PLAY)
     else if(m_has_audio && m_omx_pkt && !TRICKPLAY(m_av_clock->OMXPlaySpeed()) && m_omx_pkt->codec_type == AVMEDIA_TYPE_AUDIO)
     {
-      if(m_player_audio.AddPacket(m_omx_pkt))
+      if(m_player_audio.AddPacket(m_omx_pkt)) // ADD AUDIO PACKET
         m_omx_pkt = NULL;
       else
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec); // IF FAILED TO ADD PACKET THEN SLEEP 
     }
+		// TRICKPLAY IS A MACRO THAT RETURNS TRUE IF IN SLOWMO/FAST FORWARD (NOT NORMAL PLAY)
     else if(m_has_subtitle && m_omx_pkt && !TRICKPLAY(m_av_clock->OMXPlaySpeed()) &&
             m_omx_pkt->codec_type == AVMEDIA_TYPE_SUBTITLE)
     {
       auto result = m_player_subtitles.AddPacket(m_omx_pkt,
-                      m_omx_reader.GetRelativeIndex(m_omx_pkt->stream_index));
+                      m_omx_reader.GetRelativeIndex(m_omx_pkt->stream_index)); // ADD SUBTITLE PACKET
       if (result)
         m_omx_pkt = NULL;
       else
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec);
     }
     else
     {
       if(m_omx_pkt)
       {
-        m_omx_reader.FreePacket(m_omx_pkt);
+        m_omx_reader.FreePacket(m_omx_pkt); // UNCLEAR WHAT SITUATION CAUSES PROGRAM TO END UP HERE...???
         m_omx_pkt = NULL;
       }
       else
-        OMXClock::OMXSleep(10);
+        OMXClock::OMXSleep(sleepDelayMsec);
     }
-  }
+    
+  } // WHILE
 
+// *** END OF MAIN LOOP ***
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#pragma mark EXIT PLAYER  ~  ~  ~  ~  ~  ~  ~  ~  
+
+//------------------------------------------------------
+// EXIT PLAYER / END OF PROGRAM...
 do_exit:
+
   if (m_stats)
     printf("\n");
 
+	// PRINT OUT STOPPED TIME IF STOPPED COMMAND ISSUED...
   if (m_stop)
   {
     unsigned t = (unsigned)(m_av_clock->OMXMediaTime()*1e-6);
-    printf("Stopped at: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
+    printf("(OMXPLAYER) Stopped at: %02d:%02d:%02d\n", (t/3600), (t/60)%60, t%60);
   }
 
   if (m_NativeDeinterlace)
@@ -1835,11 +1790,13 @@ do_exit:
     char response[80];
     vc_gencmd(response, sizeof response, "hvs_update_fields %d", 0);
   }
+  
   if(m_has_video && m_refresh && tv_state.display.hdmi.group && tv_state.display.hdmi.mode)
   {
     m_BcmHost.vc_tv_hdmi_power_on_explicit_new(HDMI_MODE_HDMI, (HDMI_RES_GROUP_T)tv_state.display.hdmi.group, tv_state.display.hdmi.mode);
   }
-
+ 
+	// STOP/CLOSE EVERYTHING...
   m_av_clock->OMXStop();
   m_av_clock->OMXStateIdle();
 
@@ -1851,6 +1808,7 @@ do_exit:
     m_keyboard->Close();
   }
 
+	// FREE THE PACKET IF THERE IS ONE...
   if(m_omx_pkt)
   {
     m_omx_reader.FreePacket(m_omx_pkt);
@@ -1868,7 +1826,7 @@ do_exit:
   g_OMX.Deinitialize();
   g_RBP.Deinitialize();
 
-  printf("have a nice day ;)\n");
+  //printf("have a nice day ;)\n");
 
   // exit status success on playback end
   if (m_send_eos)
@@ -1879,3 +1837,6 @@ do_exit:
   // exit status failure on other cases
   return EXIT_FAILURE;
 }
+// END OF FILE
+//==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*==*
+

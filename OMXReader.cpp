@@ -19,6 +19,7 @@
  *
  */
 
+
 #if (defined HAVE_CONFIG_H) && (!defined WIN32)
   #include "config.h"
 #elif defined(_WIN32)
@@ -56,6 +57,18 @@ static int64_t CurrentHostCounter(void)
 } while (0)
 
 
+long long getMS();
+
+
+extern bool m_seamless_loop; // NEW!!!!!!!!! SLOCUM
+extern long loopCount; // SLOCUM
+extern double mediaTimeUSec; //SLOCUM
+extern long long videoLength; // SLOCUM
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXReader::OMXReader()
 {
   m_open        = false;
@@ -78,6 +91,8 @@ OMXReader::OMXReader()
   pthread_mutex_init(&m_lock, NULL);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXReader::~OMXReader()
 {
   Close();
@@ -85,16 +100,20 @@ OMXReader::~OMXReader()
   pthread_mutex_destroy(&m_lock);
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::Lock()
 {
   pthread_mutex_lock(&m_lock);
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::UnLock()
 {
   pthread_mutex_unlock(&m_lock);
 }
 
+//=============================================================================
+// WHAT IS THIS INTERRUPT FOR?
 static int interrupt_cb(void *unused)
 {
   int ret = 0;
@@ -111,6 +130,7 @@ static int interrupt_cb(void *unused)
   return ret;
 }
 
+//=============================================================================
 static int dvd_file_read(void *h, uint8_t* buf, int size)
 {
   RESET_TIMEOUT(1);
@@ -121,6 +141,7 @@ static int dvd_file_read(void *h, uint8_t* buf, int size)
   return pFile->Read(buf, size);
 }
 
+//=============================================================================
 static offset_t dvd_file_seek(void *h, offset_t pos, int whence)
 {
   RESET_TIMEOUT(1);
@@ -134,7 +155,10 @@ static offset_t dvd_file_seek(void *h, offset_t pos, int whence)
     return pFile->Seek(pos, whence & ~AVSEEK_FORCE);
 }
 
-bool OMXReader::Open(std::string filename, bool dump_format, bool live /* =false */, float timeout /* = 0.0f */, std::string cookie /* = "" */, std::string user_agent /* = "" */, std::string lavfdopts /* = "" */, std::string avdict /* = "" */)
+///////////////////////////////////////////////////////////////////////////////
+bool OMXReader::Open(std::string filename, bool dump_format, bool live /* =false */, 
+  float timeout /* = 0.0f */, std::string cookie /* = "" */, std::string user_agent /* = "" */, 
+  std::string lavfdopts /* = "" */, std::string avdict /* = "" */)
 {
   if (!m_dllAvUtil.Load() || !m_dllAvCodec.Load() || !m_dllAvFormat.Load())
     return false;
@@ -321,7 +345,67 @@ bool OMXReader::Open(std::string filename, bool dump_format, bool live /* =false
   m_speed       = DVD_PLAYSPEED_NORMAL;
 
   if(dump_format)
-    m_dllAvFormat.av_dump_format(m_pFormatContext, 0, m_filename.c_str(), 0);
+  {
+    // ORIGINAL FORMAT DUMP
+    //m_dllAvFormat.av_dump_format(m_pFormatContext, 0, m_filename.c_str(), 0);
+
+    // FROM GetStreamLength()
+    printf( "%d ", (int)(m_pFormatContext->duration / (AV_TIME_BASE / 1000) ) ); // VIDEO LENGTH MSEC
+
+    //------------------------------------------------------------------------------
+	  // open video file
+    /*int ret = avformat_open_input(&pFormatCtx, filename, NULL, NULL);
+    if (ret != 0) {
+        printf("Unable to open video file: %s\n", filename);
+        return;
+    } //*/
+
+    //AVFormatContext* pFormatCtx;
+  	AVCodecContext* pCodecCtx;
+  	int videoStream = -1;
+
+    // Retrieve stream information
+    /*int ret = avformat_find_stream_info(m_pFormatContext, NULL);
+    assert(ret >= 0); //*/
+
+    for( unsigned i = 0; i < m_pFormatContext->nb_streams; i++) {
+        if (m_pFormatContext->streams[i]->codec->codec_type==AVMEDIA_TYPE_VIDEO && videoStream < 0) {
+            videoStream = i;            
+        }
+    } // end for i
+    assert(videoStream != -1);
+
+    // Get a pointer to the codec context for the video stream
+    pCodecCtx=m_pFormatContext->streams[videoStream]->codec;
+    assert(pCodecCtx != NULL);
+
+    printf("%d ", pCodecCtx->width);// VIDEO WIDTH
+    printf("%d ", pCodecCtx->height);// VIDEO HEIGHT
+    printf( "\n" );
+    //------------------------------------------------------------------------------
+
+    
+    // MY NEW CODE TO GET THE DURATION DIRECTLY
+    //av_register_all();
+    //AVFormatContext* pFormatCtx = avformat_alloc_context();
+    //m_dllAvFormat.avformat_open_input(&m_pFormatContext, m_filename.c_str(), NULL, NULL);
+    
+    //avformat_find_stream_info(m_pFormatContext,NULL);
+    /*int64_t duration = m_pFormatContext->duration;
+    printf( "DURATION: %d\n", duration );
+    // etc
+    avformat_close_input(&m_pFormatContext);
+    avformat_free_context(m_pFormatContext); //*/
+
+    /*av_register_all();
+    AVFormatContext* pFormatCtx = avformat_alloc_context();
+    avformat_open_input(&pFormatCtx, filename, NULL, NULL);
+    avformat_find_stream_info(pFormatCtx,NULL)
+    int64_t duration = pFormatCtx->duration;
+    // etc
+    avformat_close_input(&pFormatCtx);
+    avformat_free_context(pFormatCtx); //*/
+  }
 
   UpdateCurrentPTS();
 
@@ -330,6 +414,7 @@ bool OMXReader::Open(std::string filename, bool dump_format, bool live /* =false
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::ClearStreams()
 {
   m_audio_index     = -1;
@@ -359,6 +444,7 @@ void OMXReader::ClearStreams()
   m_program     = UINT_MAX;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::Close()
 {
   if (m_pFormatContext)
@@ -423,6 +509,8 @@ bool OMXReader::Close()
   ff_read_frame_flush(m_pFormatContext);
 }*/
 
+///////////////////////////////////////////////////////////////////////////////
+// HAVE FFMPEG SEEK TO A SPECIFIC LOCATION IN THE STREAM...
 bool OMXReader::SeekTime(int time, bool backwords, double *startpts)
 {
   if(time < 0)
@@ -473,6 +561,7 @@ bool OMXReader::SeekTime(int time, bool backwords, double *startpts)
   return (ret >= 0);
 }
 
+///////////////////////////////////////////////////////////////////////////////
 AVMediaType OMXReader::PacketType(OMXPacket *pkt)
 {
   if(!m_pFormatContext || !pkt)
@@ -481,6 +570,8 @@ AVMediaType OMXReader::PacketType(OMXPacket *pkt)
   return m_pFormatContext->streams[pkt->stream_index]->codec->codec_type;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// READ NEXT PACKET FROM FFMPEG AND CONVERT IT TO OUR CUSTOM OMX PACKET TYPE
 OMXPacket *OMXReader::Read()
 {
   AVPacket  pkt;
@@ -502,14 +593,54 @@ OMXPacket *OMXReader::Read()
   pkt.stream_index = MAX_OMX_STREAMS;
 
   RESET_TIMEOUT(1);
-  result = m_dllAvFormat.av_read_frame(m_pFormatContext, &pkt);
-  if (result < 0)
+  result = m_dllAvFormat.av_read_frame(m_pFormatContext, &pkt); // <---- READ PACKET FROM FFMPEG
+  //if( result < 0 && (mediaTimeUSec/1000000.0) > 0.1)
+  if( result < 0 )
   {
-    m_eof = true;
-    //FlushRead();
-    //m_dllAvCodec.av_free_packet(&pkt);
-    UnLock();
-    return NULL;
+    //int64_t tim = GetStreamLength(); // MSEC
+    //printf( "STREAM LENGTH: %lld.%03lld   \n", tim/1000, tim%1000 );
+    //printf( "*~\\~**~\\~**~\\~* E O F *~\\~**~\\~**~\\~*\n" );
+    
+    //printf( "OMX READ ERROR: %d   loopCount++\n", result );
+    loopCount++;
+    
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~`
+    // MY CODE TO ATTEMPT SEAMLESS LOOPING.... (INCLUDE JUST THE LAST LINE OF THIS CHUNK TO ENABLE SEAMLESS LOOP)
+    ////  virtual int av_seek_frame(AVFormatContext *s, int stream_index, int64_t timestamp, int flags)=0; // THIS LINE COMMENTED OUT
+    //m_dllAvFormat.av_seek_frame( m_pFormatContext, -1, 0, AVSEEK_FLAG_ANY ); // <-- THIS VERSION HAS GLITCHES
+    if( m_seamless_loop == true )
+    {
+      m_dllAvFormat.av_seek_frame( m_pFormatContext, -1, 0, AVSEEK_FLAG_BACKWARD ); //<--THIS VERSION ALWAYS HITS A KEY FRAME
+    }
+    
+    // TRY AGAIN TO READ NOW THAT WE'VE RESET TO FILE POINTER TO THE BEGINNING...
+    result = m_dllAvFormat.av_read_frame(m_pFormatContext, &pkt); // <---- READ PACKET FROM FFMPEG
+    if (result < 0)
+    {
+      //printf( "(OMXPLAYER) ***** REACHED END OF FILE *******\n" );
+      //---------------------------------------------------------------
+      // ORIGINAL LOOP/EOF CODE (DON'T NEED TO COMMENT THIS OUT FOR SEAMLESS LOOP)
+      m_eof = true;
+      //FlushRead(); // THIS LINE COMMENTED OUT IN ORIGINAL CODE
+      //m_dllAvCodec.av_free_packet(&pkt); // THIS LINE COMMENTED OUT IN ORIGINAL CODE
+      UnLock();
+      return NULL; //*/
+      //---------------------------------------------------------------
+    }
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~`
+
+    //---------------------------------------------------------------
+    // IF NOT SEAMLESS-LOOP MODE...
+    if( m_seamless_loop == false )
+    {
+    // ORIGINAL LOOP/EOF CODE (COMMENT THIS SECTION OUT FOR SEAMLESS LOOP)
+      m_eof = true;
+      //FlushRead(); // THIS LINE COMMENTED OUT IN ORIGINAL CODE
+      //m_dllAvCodec.av_free_packet(&pkt); // THIS LINE COMMENTED OUT IN ORIGINAL CODE
+      UnLock();
+      return NULL; //*/
+    }
+    //---------------------------------------------------------------
   }
 
   if (pkt.size < 0 || pkt.stream_index >= MAX_OMX_STREAMS || interrupt_cb(NULL))
@@ -593,9 +724,66 @@ OMXPacket *OMXReader::Read()
   m_omx_pkt->stream_index = pkt.stream_index;
   GetHints(pStream, &m_omx_pkt->hints);
 
-  m_omx_pkt->dts = ConvertTimestamp(pkt.dts, pStream->time_base.den, pStream->time_base.num);
-  m_omx_pkt->pts = ConvertTimestamp(pkt.pts, pStream->time_base.den, pStream->time_base.num);
-  m_omx_pkt->duration = DVD_SEC_TO_TIME((double)pkt.duration * pStream->time_base.num / pStream->time_base.den);
+  // ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ -
+  // THIS IS WHERE THE TIMESTAMPS FOR THE PACKET ARE SET
+  if( m_seamless_loop == true )
+  {
+    // SEAMLESS LOOP 
+    int64_t tim = GetStreamLength(); // MSEC
+    
+    m_omx_pkt->dts = ConvertTimestamp(pkt.dts, pStream->time_base.den, pStream->time_base.num) + tim*loopCount*1000;
+    m_omx_pkt->pts = ConvertTimestamp(pkt.pts, pStream->time_base.den, pStream->time_base.num) + tim*loopCount*1000;
+    m_omx_pkt->duration = DVD_SEC_TO_TIME((double)pkt.duration * pStream->time_base.num / pStream->time_base.den);
+
+    /*static int debug1;
+    debug1++;
+    if( debug1 % 200 == 0 )
+    {
+      printf( "-----------------------------------------------------------\n" );
+      printf( "(OMX) LOOP#: %ld  LENGTH FOR SLOOP PURPOSES: %lld  GIVEN LENGTH: %lld \n", loopCount, tim, videoLength );
+      printf( "\\-(OMX)MSEC   DTS: %f  PTS: %f  DUR: %f  \n",  m_omx_pkt->dts/1000.0,  m_omx_pkt->pts/1000.0,  m_omx_pkt->duration/1000.0 );
+      printf( "\\-(OMX) pkt.dts: %lld  timebaseDev: %d  timebaseNum: %d  \n", pkt.dts, pStream->time_base.den, pStream->time_base.num );
+    } //*/
+    
+
+  }
+  else
+  {
+    // ORIGINAL CODE WITHOUT SEAMLESS LOOP
+    m_omx_pkt->dts = ConvertTimestamp(pkt.dts, pStream->time_base.den, pStream->time_base.num);
+    m_omx_pkt->pts = ConvertTimestamp(pkt.pts, pStream->time_base.den, pStream->time_base.num);
+    m_omx_pkt->duration = DVD_SEC_TO_TIME((double)pkt.duration * pStream->time_base.num / pStream->time_base.den);
+  }
+  // ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ - ~~ -
+
+
+  //_______________________________________________________________________________________________________________
+  //_______________________________________________________________________________________________________________
+  // CLOCK DEBUG DISPLAY
+  static long readCount=0;
+  readCount++;
+  //int64_t absoluteClock = m_av_clock->GetAbsoluteClock();
+  //double getClock = m_av_clock->GetClock( true ); // GetClock(bool interpolated = true);
+  //double omxMediaTime = m_av_clock->OMXMediaTime( true ); // MXMediaTime(bool lock = true);
+  //double omxClockAdjust = m_av_clock->OMXClockAdjustment( true ); //OMXClockAdjustment(bool lock = true);
+  //long long myTime = getMS();
+  //double getClock = m_av_clock->GetClock(bool interpolated = true);
+  //double omxMediaTime = m_av_clock->OMXMediaTime(bool lock = true);
+  //double omxClockAdjust = m_av_clock->OMXClockAdjustment(bool lock = true);
+  //long long timeNowInt = (long long) omxMediaTime;
+  //if( (debugDisplayCounter % 100) == 0 )
+  {
+    // DEBUG!!!!!!!!!!
+    /*printf( "[%ld]  ", readCount );
+    printf( "TIME NOW: %lld.%03lld   ", (myTime/1000)%1000, myTime%1000 );
+    printf( "FFMPEG PTS: %lld.%06lld   ", ((long long)m_omx_pkt->pts)/1000000, ((long long)m_omx_pkt->pts)%1000000 );
+    printf( "\n" ); //*/
+    //printf( "FFMPEG PTS : %lld \n", ((long long)omxMediaTime/1000) + targetVideoStartTime - myTime  );  
+    //printf( "ABS: %f GET: %f MEDIA:%f ADJUST:%f MY:%lld\n", absoluteClock/1000000.0, getClock/1000000, omxMediaTime/1000000, omxClockAdjust/1000000, myTime );
+  }
+  //_______________________________________________________________________________________________________________
+  //_______________________________________________________________________________________________________________
+
 
   // used to guess streamlength
   if (m_omx_pkt->dts != DVD_NOPTS_VALUE && (m_omx_pkt->dts > m_iCurrentPts || m_iCurrentPts == DVD_NOPTS_VALUE))
@@ -626,6 +814,7 @@ OMXPacket *OMXReader::Read()
   return m_omx_pkt;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::GetStreams()
 {
   if(!m_pFormatContext)
@@ -705,7 +894,7 @@ bool OMXReader::GetStreams()
       if(m_pFormatContext->chapters[i]->title)
         m_chapters[i].name = m_pFormatContext->chapters[i]->title;
 #endif
-      printf("Chapter : \t%d \t%s \t%8.2f\n", i, m_chapters[i].name.c_str(), m_chapters[i].ts);
+      //printf("Chapter : \t%d \t%s \t%8.2f\n", i, m_chapters[i].name.c_str(), m_chapters[i].ts);
     }
   }
 #endif
@@ -713,6 +902,8 @@ bool OMXReader::GetStreams()
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// WHAT DOES ADDSTREAM() DO???
 void OMXReader::AddStream(int id)
 {
   if(id > MAX_STREAMS || !m_pFormatContext)
@@ -782,6 +973,7 @@ void OMXReader::AddStream(int id)
   }
 }
 
+/////////////////////////////////////////////////////////////////////////////////
 bool OMXReader::SetActiveStreamInternal(OMXStreamType type, unsigned int index)
 {
   bool ret = false;
@@ -849,6 +1041,7 @@ bool OMXReader::SetActiveStreamInternal(OMXStreamType type, unsigned int index)
   return ret;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::IsActive(int stream_index)
 {
   if((m_audio_index != -1)    && m_streams[m_audio_index].id      == stream_index)
@@ -861,6 +1054,7 @@ bool OMXReader::IsActive(int stream_index)
   return false;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::IsActive(OMXStreamType type, int stream_index)
 {
   if((m_audio_index != -1)    && m_streams[m_audio_index].id      == stream_index && m_streams[m_audio_index].type == type)
@@ -873,6 +1067,7 @@ bool OMXReader::IsActive(OMXStreamType type, int stream_index)
   return false;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 double OMXReader::SelectAspect(AVStream* st, bool& forced)
 {
   // trust matroshka container
@@ -898,6 +1093,7 @@ double OMXReader::SelectAspect(AVStream* st, bool& forced)
   return 0.0;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::GetHints(AVStream *stream, COMXStreamInfo *hints)
 {
   if(!hints || !stream)
@@ -955,6 +1151,7 @@ bool OMXReader::GetHints(AVStream *stream, COMXStreamInfo *hints)
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::GetHints(OMXStreamType type, unsigned int index, COMXStreamInfo &hints)
 {
   for(unsigned int i = 0; i < MAX_STREAMS; i++)
@@ -969,6 +1166,7 @@ bool OMXReader::GetHints(OMXStreamType type, unsigned int index, COMXStreamInfo 
   return false;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::GetHints(OMXStreamType type, COMXStreamInfo &hints)
 {
   bool ret = false;
@@ -1003,11 +1201,13 @@ bool OMXReader::GetHints(OMXStreamType type, COMXStreamInfo &hints)
   return ret;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::IsEof()
 {
   return m_eof;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::FreePacket(OMXPacket *pkt)
 {
   if(pkt)
@@ -1018,6 +1218,7 @@ void OMXReader::FreePacket(OMXPacket *pkt)
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 OMXPacket *OMXReader::AllocPacket(int size)
 {
   OMXPacket *pkt = (OMXPacket *)malloc(sizeof(OMXPacket));
@@ -1044,6 +1245,7 @@ OMXPacket *OMXReader::AllocPacket(int size)
   return pkt;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::SetActiveStream(OMXStreamType type, unsigned int index)
 {
   bool ret = false;
@@ -1053,6 +1255,7 @@ bool OMXReader::SetActiveStream(OMXStreamType type, unsigned int index)
   return ret;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::SeekChapter(int chapter, double* startpts)
 {
   if(chapter < 1)
@@ -1073,6 +1276,7 @@ bool OMXReader::SeekChapter(int chapter, double* startpts)
 #endif
 }
 
+///////////////////////////////////////////////////////////////////////////////
 double OMXReader::ConvertTimestamp(int64_t pts, int den, int num)
 {
   if(m_pFormatContext == NULL)
@@ -1097,6 +1301,7 @@ double OMXReader::ConvertTimestamp(int64_t pts, int den, int num)
   return timestamp*DVD_TIME_BASE;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 int OMXReader::GetChapter()
 {
   if(m_pFormatContext == NULL
@@ -1115,6 +1320,7 @@ int OMXReader::GetChapter()
   return 0;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::GetChapterName(std::string& strChapterName)
 {
   strChapterName = "";
@@ -1137,6 +1343,8 @@ void OMXReader::GetChapterName(std::string& strChapterName)
 #endif
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// UPDATE THE TIME POINTER m_iCurrentPts WITH THE CURRENT TIME FROM FFMPEG
 void OMXReader::UpdateCurrentPTS()
 {
   m_iCurrentPts = DVD_NOPTS_VALUE;
@@ -1152,6 +1360,7 @@ void OMXReader::UpdateCurrentPTS()
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 void OMXReader::SetSpeed(int iSpeed)
 {
   if(!m_pFormatContext)
@@ -1185,6 +1394,7 @@ void OMXReader::SetSpeed(int iSpeed)
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 int OMXReader::GetStreamLength()
 {
   if (!m_pFormatContext)
@@ -1193,6 +1403,7 @@ int OMXReader::GetStreamLength()
   return (int)(m_pFormatContext->duration / (AV_TIME_BASE / 1000));
 }
 
+///////////////////////////////////////////////////////////////////////////////
 double OMXReader::NormalizeFrameduration(double frameduration)
 {
   //if the duration is within 20 microseconds of a common duration, use that
@@ -1218,6 +1429,7 @@ double OMXReader::NormalizeFrameduration(double frameduration)
     return frameduration;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetStreamCodecName(AVStream *stream)
 {
   std::string strStreamName = "";
@@ -1264,6 +1476,7 @@ std::string OMXReader::GetStreamCodecName(AVStream *stream)
   return strStreamName;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetCodecName(OMXStreamType type)
 {
   std::string strStreamName;
@@ -1291,6 +1504,7 @@ std::string OMXReader::GetCodecName(OMXStreamType type)
   return strStreamName;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetCodecName(OMXStreamType type, unsigned int index)
 {
   std::string strStreamName = "";
@@ -1307,6 +1521,7 @@ std::string OMXReader::GetCodecName(OMXStreamType type, unsigned int index)
   return strStreamName;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetStreamLanguage(OMXStreamType type, unsigned int index)
 {
   std::string language = "";
@@ -1323,6 +1538,7 @@ std::string OMXReader::GetStreamLanguage(OMXStreamType type, unsigned int index)
   return language;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetStreamName(OMXStreamType type, unsigned int index)
 {
   std::string name = "";
@@ -1339,6 +1555,7 @@ std::string OMXReader::GetStreamName(OMXStreamType type, unsigned int index)
   return name;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 std::string OMXReader::GetStreamType(OMXStreamType type, unsigned int index)
 {
   std::string strInfo;
@@ -1380,6 +1597,7 @@ std::string OMXReader::GetStreamType(OMXStreamType type, unsigned int index)
   return strInfo;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 bool OMXReader::CanSeek()
 {
   if(m_ioContext)

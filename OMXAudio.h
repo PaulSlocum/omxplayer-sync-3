@@ -17,6 +17,41 @@
 * along with this program; if not, write to the Free Software
 * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
+//***************************************************************************************
+//
+// CLASS: COMXAudio
+//
+// HANDLES HARDWARE AUDIO DECODING, VOLUME, AUDIO OUTPUT. CREATES AND 
+// LINKS A SERIES OF OMX COMPONENTS
+// AND TUNNELS TO DECODE AUDIO, ADJUST VOLUME, SPLIT, AND RENDER TO 
+// HDMI OUT AND/OR ANALOG OUT AND/OR ALSA (ADVANCED LINUX SOUND ARCHITECTURE).
+//
+// THIS CLASS IS WRAPPED BY THE CLASS OMXPlayerAudio.
+//
+//-    -    -    -    -    -    -    -    -    -    -    -    -    -    -    -    -    -    
+//
+// OMX COMPONENT CONNECTIONS:
+//
+//                       m_omx_decoder   "OMX.broadcom.audio_decode"
+//                            |
+//                   (m_omx_tunnel_decoder)
+//                            |
+//                        m_omx_mixer     "OMX.broadcom.audio_mixer"
+//                            |
+//                    (m_omx_tunnel_mixer)   
+//                            |
+//                       m_omx_splitter    "OMX.broadcom.audio_splitter"
+//                          /        \                                                   .
+// (m_omx_tunnel_splitter_analog)    (m_omx_tunnel_splitter_hdmi)
+//             |                                |
+//     m_omx_render_analog                m_omx_render_hdmi  "OMX.broadcom.audio_render"
+// NOTE: ALSA uses analog output
+//
+//
+// NOTE: m_omx_tunnel_clock_analog AND m_omx_tunnel_clock_hdmi ARE ALSO
+//        CONNECTED TO THE RENDER MODULES FROM THE MASTER CLOCK FOR SYNCHRONIZATION
+//
+//***************************************************************************************
 
 //////////////////////////////////////////////////////////////////////
 
@@ -40,6 +75,7 @@
 
 #define AUDIO_BUFFER_SECONDS 3
 
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class OMXAudioConfig
 {
 public:
@@ -68,6 +104,7 @@ public:
   }
 };
 
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class COMXAudio
 {
 public:
@@ -138,8 +175,8 @@ private:
   float         m_amplification;
   float         m_attenuation;
   float         m_submitted;
-  COMXCoreComponent *m_omx_clock;
-  OMXClock      *m_av_clock;
+  COMXCoreComponent *m_omx_clock; // POINTER TO MASTER CLOCK OBJECT'S OMX CLOCK COMPONENT
+  OMXClock      *m_av_clock; // POINTER TO MASTER CLOCK OBJECT
   bool          m_settings_changed;
   bool          m_setStartTime;
   OMX_AUDIO_CODINGTYPE m_eEncoding;

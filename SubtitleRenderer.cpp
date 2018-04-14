@@ -23,6 +23,18 @@
 // FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
+//
+//****************************************************************************************
+//
+// CLASS: BoxRenderer
+//
+//    PROBABLY RENDERS A BOX BACKGROUND?
+//
+// CLASS: SubtitleRenderer
+//
+//    RENDERS SUBITTLE TEXT TO THE SCREEN USING THE OPENVG API.
+//
+//****************************************************************************************
 
 #include "SubtitleRenderer.h"
 #include "Unicode.h"
@@ -36,6 +48,12 @@
 #include <algorithm>
 
 #include "bcm_host.h"
+
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+// CLASS: BoxRenderer
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 class BoxRenderer {
   VGPath path_;
@@ -88,6 +106,13 @@ public:
   }
 };
 
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+// CLASS: SubtitleRenderer
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::load_glyph(InternalChar ch) {
   VGfloat escapement[2]{};
 
@@ -191,6 +216,7 @@ void SubtitleRenderer::load_glyph(InternalChar ch) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 int SubtitleRenderer::get_text_width(const std::vector<InternalChar>& text) {
   int width = 0;
   for (auto c = text.begin(); c != text.end(); ++c) {
@@ -199,6 +225,7 @@ int SubtitleRenderer::get_text_width(const std::vector<InternalChar>& text) {
   return width;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 std::vector<SubtitleRenderer::InternalChar> SubtitleRenderer::
 get_internal_chars(const std::string& str, TagTracker& tag_tracker) {
   std::vector<InternalChar> internal_chars;
@@ -216,6 +243,7 @@ get_internal_chars(const std::string& str, TagTracker& tag_tracker) {
   return internal_chars;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::
 prepare_glyphs(const std::vector<InternalChar>& text) {
   for (auto c = text.begin(); c != text.end(); ++c) {
@@ -224,6 +252,7 @@ prepare_glyphs(const std::vector<InternalChar>& text) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::
 draw_text(VGFont font,
           const std::vector<SubtitleRenderer::InternalChar>& text,
@@ -256,10 +285,14 @@ draw_text(VGFont font,
 }
 
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 SubtitleRenderer::~SubtitleRenderer() BOOST_NOEXCEPT {
   destroy();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 SubtitleRenderer::
 SubtitleRenderer(int display, int layer,
                  const std::string& font_path,
@@ -320,12 +353,14 @@ SubtitleRenderer(int display, int layer,
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::destroy() {
   destroy_vg();
   destroy_window();
   destroy_fonts();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::
 initialize_fonts(const std::string& font_path,
                  const std::string& italic_font_path) {
@@ -369,6 +404,7 @@ initialize_fonts(const std::string& font_path,
                  0);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::destroy_fonts() {
   if (ft_library_) {
     auto error = FT_Done_FreeType(ft_library_);
@@ -380,6 +416,7 @@ void SubtitleRenderer::destroy_fonts() {
   }
 } 
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::initialize_window(int display, int layer) {
   VC_RECT_T dst_rect;
   dst_rect.x = config_.buffer_x;
@@ -418,6 +455,7 @@ void SubtitleRenderer::initialize_window(int display, int layer) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::destroy_window() {  
   if (dispman_element_) {
     auto dispman_update = vc_dispmanx_update_start(0);
@@ -442,6 +480,7 @@ void SubtitleRenderer::destroy_window() {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::initialize_vg() {
   // get an EGL display connection
   display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -500,6 +539,7 @@ void SubtitleRenderer::initialize_vg() {
   // vgSetfv(VG_CLEAR_COLOR, 4, color);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::destroy_vg() {
   if (display_) {
     auto result =
@@ -515,6 +555,7 @@ void SubtitleRenderer::destroy_vg() {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::
 prepare(const std::vector<std::string>& text_lines) BOOST_NOEXCEPT {
   const int n_lines = text_lines.size();
@@ -537,11 +578,13 @@ prepare(const std::vector<std::string>& text_lines) BOOST_NOEXCEPT {
   prepared_ = true;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::clear() BOOST_NOEXCEPT {
   vgClear(0, 0, screen_width_, screen_height_);
   assert(!vgGetError());
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::draw() BOOST_NOEXCEPT {
   clear();
 
@@ -578,11 +621,13 @@ void SubtitleRenderer::draw() BOOST_NOEXCEPT {
   prepared_ = false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::swap_buffers() BOOST_NOEXCEPT {
   EGLBoolean result = eglSwapBuffers(display_, surface_);
   assert(result);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void SubtitleRenderer::set_rect(int x1, int y1, int x2, int y2) BOOST_NOEXCEPT
 {
     uint32_t width = x2-x1;

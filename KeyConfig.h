@@ -43,6 +43,8 @@ class KeyConfig
         ACTION_CROP_VIDEO = 34,
         ACTION_PAUSE = 35,
         ACTION_PLAY = 36,
+        ACTION_SET_PLAYLIST_START_TIME = 37,
+        ACTION_SET_SYNC_MODE = 38
     };
 
     #define KEY_LEFT 0x5b44

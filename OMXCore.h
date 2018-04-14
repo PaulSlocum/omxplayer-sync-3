@@ -18,6 +18,28 @@
  *  <http://www.gnu.org/licenses/>.
  *
  */
+//*********************************************************************************
+//
+// CLASS: COMXCoreTunel 
+//    ("TUNEL IS A MISSPELLING OF "TUNNEL")
+//
+//    THIS CLASS APPEARS TO REPRESENT CONNECTIONS BETWEEN 
+//    THE PORTS OF "COMXCoreComponent" NODES.
+//
+// CLASS: COMXCoreComponent
+//
+//    THIS CLASS APPEARS TO REPRESENT A "NODE" IN THE OMX INTERFACE,
+//    SIMILAR TO AN APPLE AUDIO UNIT.  NODES HAVE INPUT AND OUTPUT PORTS AND MODES
+//    WHICH MUST BE CONNECTED AND ORCHESTRATED PRECISELY.  PROBABLY ONE NODE
+//    IS USED TO DECODE AUDIO AND ANOTHER IS USED TO DECODE VIDEO?
+//
+// CLASS: COMXCore 
+//    
+//    THIS CLASS INITIALIZES THE INTERFACE TO MAKE CALLS DIRECTLY INTO THE 
+//    OMX LIBRARY FOR USE OF THE GPU.
+// 
+//*********************************************************************************
+
 
 #if defined(HAVE_OMXLIB)
 
@@ -61,6 +83,8 @@ class COMXCoreComponent;
 class COMXCoreTunel;
 class COMXCoreClock;
 
+
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class COMXCoreTunel
 {
 public:
@@ -80,6 +104,8 @@ private:
   bool              m_tunnel_set;
 };
 
+
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class COMXCoreComponent
 {
 public:
@@ -201,6 +227,7 @@ private:
   bool          m_resource_error;
 };
 
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class COMXCore
 {
 public:

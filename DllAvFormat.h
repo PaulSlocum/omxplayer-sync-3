@@ -19,6 +19,11 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//***************************************************************************************
+//
+// HEADER FOR FFMPEG/LIBAVFORMAT DLL
+//
+//***************************************************************************************
 
 #if (defined HAVE_CONFIG_H) && (!defined WIN32)
   #include "config.h"

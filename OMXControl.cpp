@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -13,7 +14,24 @@
 #include "OMXControl.h"
 #include "KeyConfig.h"
 
+//==========================================================================
+// DEBUG -- THIS CAN BE REMOVED LATER
+long long getCurrentTimeMSec();
 
+
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// MY OWN GLOBAL VARIABLES
+extern long long mediaTimeOffsetMSec;
+extern long long playlistStartTimeMSec;
+extern long long pauseTimeMSec;
+extern bool startPause;
+extern bool startUnpause;
+extern bool videoPositionChanged;
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+// ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - ~ - 
+
+//=========================================================================================
 void ToURI(const std::string& str, char *uri)
 {
   //Test if URL/URI
@@ -48,6 +66,7 @@ void ToURI(const std::string& str, char *uri)
   }
 }
 
+//=========================================================================================
 void deprecatedMessage()
 {
   CLog::Log(LOGWARNING, "DBus property access through direct method is deprecated. Use Get/Set methods instead.");
@@ -56,42 +75,77 @@ void deprecatedMessage()
 
 #define CLASSNAME "OMXControl"
 
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//
+#pragma mark -----------------    OMXControlResult CLASS  -----------------------------------
+//
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXControlResult::OMXControlResult( int newKey ) {
   key = newKey;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXControlResult::OMXControlResult( int newKey, int64_t newArg ) {
   key = newKey;
   arg = newArg;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXControlResult::OMXControlResult( int newKey, const char *newArg ) {
   key = newKey;
   winarg = newArg;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 int OMXControlResult::getKey() {
   return key;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 int64_t OMXControlResult::getArg() {
   return arg;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 const char *OMXControlResult::getWinArg() {
   return winarg;
 }
 
+
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//
+#pragma mark ----------------------- OMXControl CLASS --------------------------------------
+//
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXControl::OMXControl() 
 {
-
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXControl::~OMXControl() 
 {
     dbus_disconnect();
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 int OMXControl::init(OMXClock *m_av_clock, OMXPlayerAudio *m_player_audio, OMXPlayerSubtitles *m_player_subtitles, OMXReader *m_omx_reader, std::string& dbus_name)
 {
   int ret = 0;
@@ -100,6 +154,8 @@ int OMXControl::init(OMXClock *m_av_clock, OMXPlayerAudio *m_player_audio, OMXPl
   subtitles = m_player_subtitles;
   reader    = m_omx_reader;
 
+  //printf( "DBUS NAME: %s\n", dbus_name.c_str() );
+  
   if (dbus_connect(dbus_name) < 0)
   {
     CLog::Log(LOGWARNING, "DBus connection failed, trying alternate");
@@ -126,12 +182,14 @@ int OMXControl::init(OMXClock *m_av_clock, OMXPlayerAudio *m_player_audio, OMXPl
   return ret;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXControl::dispatch()
 {
   if (bus)
     dbus_connection_read_write(bus, 0);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 int OMXControl::dbus_connect(std::string& dbus_name)
 {
   DBusError error;
@@ -177,6 +235,7 @@ fail:
     return -1;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXControl::dbus_disconnect()
 {
     if (bus)
@@ -187,6 +246,7 @@ void OMXControl::dbus_disconnect()
     }
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 OMXControlResult OMXControl::getEvent()
 {
   if (!bus)
@@ -205,12 +265,48 @@ OMXControlResult OMXControl::getEvent()
   return result;
 }
 
+#include <string>
+
+/////////////////////////////////////////////////////////////////////////////////////////
 OMXControlResult OMXControl::handle_event(DBusMessage *m)
 {
+	//printf( "====---------------------------------------------------\n" );
+	//printf( "DBUS- %s ----------------------------------------------\n", dbus_message_get_member( m ) );
+	//printf( "====---------------------------------------------------\n" );
+	
+	if( dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "VideoPos") )
+  {
+    //printf( "(.) CONFIRMED VIDEOPOS\n" );
+    DBusError error;
+    dbus_error_init(&error);
+
+    const char *win;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_STRING, &win, DBUS_TYPE_INVALID);
+
+    // Make sure a value is sent for setting VideoPos
+    if (dbus_error_is_set(&error))
+    {
+      printf( "(!) ERROR GETTIN ARGUMENT \n" );
+      CLog::Log(LOGWARNING, "VideoPos D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      //printf( "(.) GOT ARGUMENT\n" );
+    }
+      
+  }
+  //------------------------------------------------------------------------
+  
+	
   //----------------------------DBus root interface-----------------------------
   //Methods:
   if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_ROOT, "Quit"))
   {
+	  //printf( "1====---------------------------------------------------\n" );
     dbus_respond_ok(m);//Note: No reply according to MPRIS2 specs
     return KeyConfig::ACTION_EXIT;
   }
@@ -223,6 +319,7 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   //TODO: implement GetAll
   else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Get"))
   {
+	  //printf( "GET !!!~~~~~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------\n" );
     DBusError error;
     dbus_error_init(&error);
 
@@ -458,6 +555,7 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   //TODO: implement signal generation on some property changes
   else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Set"))
   {
+		//printf( "SET !!!~~~~~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------\n" );
     DBusError error;
     dbus_error_init(&error);
 
@@ -535,7 +633,7 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
         {
           volume=.0;
         }
-        audio->SetVolume(volume);
+        audio->SetVolume(volume / 10.0);
         dbus_respond_double(m, volume);
         return KeyConfig::ACTION_BLANK;
       }
@@ -790,26 +888,36 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Pause"))
   {
+	  printf( "(OMXPLAYER) Pause SLOCTECH SLOCTECH SLOCTECH \n" );
     dbus_respond_ok(m);
     return KeyConfig::ACTION_PAUSE;
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Play"))
   {
+	  printf( "(OMXPLAYER) Play SLOCTECH SLOCTECH SLOCTECH  \n" );
     dbus_respond_ok(m);
     return KeyConfig::ACTION_PLAY;
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "PlayPause"))
   {
+	  printf( "(OMXPLAYER) PlayPause SLOCTECH SLOCTECH SLOCTECH  \n" );
     dbus_respond_ok(m);
     return KeyConfig::ACTION_PLAYPAUSE;
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Stop"))
   {
+  	//while(1);
+  
+	  printf( "(OMXPLAYER) SLOCTECH SLOCTECH SLOCTECH \n" );
+	//exit(0);
+
     dbus_respond_ok(m);
     return KeyConfig::ACTION_EXIT;
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Seek"))
   {
+	  printf( "(OMXPLAYER) Seek SLOCTECH SLOCTECH SLOCTECH\n" );
+
     DBusError error;
     dbus_error_init(&error);
 
@@ -832,6 +940,145 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "SetPosition"))
   {
+	  printf( "(OMXPLAYER) SetPosition SLOCTECH SLOCTECH \n" );
+
+    DBusError error;
+    dbus_error_init(&error);
+
+    int64_t position = 0;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &position, DBUS_TYPE_INVALID);
+
+    // Make sure a value is sent for setting position
+    if (dbus_error_is_set(&error))
+    {
+      CLog::Log(LOGWARNING, "SetPosition D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      dbus_respond_int64(m, position);
+      return OMXControlResult(KeyConfig::ACTION_SEEK_ABSOLUTE, position);
+    }
+  }
+  else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "SetVolume"))
+  {
+    DBusError error;
+    dbus_error_init(&error);
+
+    int64_t volume = 0;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &volume, DBUS_TYPE_INVALID);
+
+    // Make sure a value is sent 
+    if (dbus_error_is_set(&error))
+    {
+      CLog::Log(LOGWARNING, "SetVolume D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      audio->SetVolume( volume / 100.0 );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+      //return OMXControlResult(KeyConfig::ACTION_SEEK_ABSOLUTE, position);
+    }
+  }
+  else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "PauseAt"))
+  {
+    DBusError error;
+    dbus_error_init(&error);
+
+    startPause = true;
+
+    int64_t position = 0;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &pauseTimeMSec, DBUS_TYPE_INVALID);
+
+	  //printf( "(OMXPLAYER) PauseAt  SLOCTECH SLOCTECH \n" );
+
+    // Make sure a value is sent for setting position
+    if (dbus_error_is_set(&error))
+    {
+      CLog::Log(LOGWARNING, "PauseAt D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      dbus_respond_int64(m, position);
+      return KeyConfig::ACTION_BLANK;
+      //return OMXControlResult(KeyConfig::ACTION_SEEK_ABSOLUTE, position);
+    }
+  }
+  else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "UnpauseAt"))
+  {
+    DBusError error;
+    dbus_error_init(&error);
+
+    startUnpause = true;
+
+    int64_t position = 0;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &playlistStartTimeMSec, DBUS_TYPE_INVALID);
+    //dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &mediaTimeOffsetMSec, DBUS_TYPE_INVALID);
+
+	  //printf( "(OMXPLAYER) UnpauseAt %lld SLOCTECH SLOCTECH \n", mediaTimeOffsetMSec );
+
+    // Make sure a value is sent for setting position
+    if (dbus_error_is_set(&error))
+    {
+      CLog::Log(LOGWARNING, "UnpauseAt D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      dbus_respond_int64(m, position);
+      return KeyConfig::ACTION_BLANK;
+      //return OMXControlResult(KeyConfig::ACTION_SEEK_ABSOLUTE, position);
+    }
+  }
+  else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "SetPlaylistStartTime"))
+  {
+
+    DBusError error;
+    dbus_error_init(&error);
+
+    int64_t position = 0;
+    const char *oPath; // ignoring path right now because we don't have a playlist
+    dbus_message_get_args(m, &error, DBUS_TYPE_OBJECT_PATH, &oPath, DBUS_TYPE_INT64, &playlistStartTimeMSec, DBUS_TYPE_INVALID);
+
+	  printf( "(OMXPLAYER) SetPlaylistStartTime %lld ...AT... %lld sec\n", playlistStartTimeMSec, getCurrentTimeMSec()/1000 );
+
+    // Make sure a value was sent for setting position
+    if (dbus_error_is_set(&error))
+    {
+      CLog::Log(LOGWARNING, "SetPlaylistStartTime D-Bus Error: %s", error.message );
+      dbus_error_free(&error);
+      dbus_respond_ok(m);
+      return KeyConfig::ACTION_BLANK;
+    }
+    else
+    {
+      dbus_respond_int64(m, position);
+      return KeyConfig::ACTION_BLANK; 
+      //return OMXControlResult(KeyConfig::ACTION_SET_SYNC_OFFSET, position);
+    }
+  }
+  else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "SetSyncMode"))
+  {
+    // THIS PROBABLY WON'T BE USED BECAUSE VIDEOS WILL BE RELOADED WHEN SYNC IS ESTABLISHED
+      
+	  printf( "(OMXPLAYER) SetSyncMode SLOCTECH SLOCTECH  \n" );
+
     DBusError error;
     dbus_error_init(&error);
 
@@ -850,7 +1097,7 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
     else
     {
       dbus_respond_int64(m, position);
-      return OMXControlResult(KeyConfig::ACTION_SEEK_ABSOLUTE, position);
+      return OMXControlResult(KeyConfig::ACTION_SET_SYNC_MODE, position);
     }
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "SetAlpha"))
@@ -1017,7 +1264,7 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "ListVideo"))
   {
-    int count = reader->VideoStreamCount();
+    int count = reader->AudioStreamCount();
     char** values = new char*[count];
 
     for (int i=0; i < count; i++)
@@ -1105,6 +1352,8 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   }
   else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Action"))
   {
+  	//printf( "ACTION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n" );
+  
     DBusError error;
     dbus_error_init(&error);
 
@@ -1125,14 +1374,17 @@ OMXControlResult OMXControl::handle_event(DBusMessage *m)
   }
   //----------------------------------------------------------------------------
   else {
+	//printf( "UNHANDLED DBUS !!!~~~~~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------\n" );
     CLog::Log(LOGWARNING, "Unhandled dbus message, member: %s interface: %s type: %d path: %s", dbus_message_get_member(m), dbus_message_get_interface(m), dbus_message_get_type(m), dbus_message_get_path(m) );
     if (dbus_message_get_type(m) == DBUS_MESSAGE_TYPE_METHOD_CALL)
       dbus_respond_error(m, DBUS_ERROR_UNKNOWN_METHOD, "Unknown method");
   }
 
+  //printf( "ACTION_BLANK !!!~~~~~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------\n" );
   return KeyConfig::ACTION_BLANK;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_error(DBusMessage *m, const char *name, const char *msg)
 {
   DBusMessage *reply;
@@ -1148,6 +1400,7 @@ DBusHandlerResult OMXControl::dbus_respond_error(DBusMessage *m, const char *nam
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_ok(DBusMessage *m)
 {
   DBusMessage *reply;
@@ -1163,6 +1416,7 @@ DBusHandlerResult OMXControl::dbus_respond_ok(DBusMessage *m)
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_string(DBusMessage *m, const char *text)
 {
   DBusMessage *reply;
@@ -1182,6 +1436,7 @@ DBusHandlerResult OMXControl::dbus_respond_string(DBusMessage *m, const char *te
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_int64(DBusMessage *m, int64_t i)
 {
   DBusMessage *reply;
@@ -1201,6 +1456,7 @@ DBusHandlerResult OMXControl::dbus_respond_int64(DBusMessage *m, int64_t i)
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_double(DBusMessage *m, double d)
 {
   DBusMessage *reply;
@@ -1220,6 +1476,7 @@ DBusHandlerResult OMXControl::dbus_respond_double(DBusMessage *m, double d)
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_boolean(DBusMessage *m, int b)
 {
   DBusMessage *reply;
@@ -1239,6 +1496,7 @@ DBusHandlerResult OMXControl::dbus_respond_boolean(DBusMessage *m, int b)
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 DBusHandlerResult OMXControl::dbus_respond_array(DBusMessage *m, const char *array[], int size)
 {
   DBusMessage *reply;

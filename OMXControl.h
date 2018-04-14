@@ -1,3 +1,17 @@
+//***************************************************************************************
+//
+// CLASS: OMXControlResult
+//
+//		SIMPLE CONTAINER CLASS FOR COMMAND/ARGUMENT COMBOS?
+//
+// CLASS: OMXControl
+//
+//		INTERFACE CLASS FOR DBUS INTERFACE, HANDLES ALL DBUS COMMANDS AND
+//		PASSES THEM TO THE MAIN() FUNCTION WHERE THEY ARE HANDLED AS 
+//		KEY COMMANDS.
+//
+//***************************************************************************************
+
 #define OMXPLAYER_DBUS_PATH_SERVER "/org/mpris/MediaPlayer2"  
 #define OMXPLAYER_DBUS_INTERFACE_ROOT "org.mpris.MediaPlayer2"
 #define OMXPLAYER_DBUS_INTERFACE_PLAYER "org.mpris.MediaPlayer2.Player"

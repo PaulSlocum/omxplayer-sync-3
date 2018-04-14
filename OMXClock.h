@@ -18,6 +18,15 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//**************************************************************************************
+//
+// CLASS: OMXClock
+//
+// CREATES AN OMX COMPONENT "OMX.broadcom.clock" WHICH IS LINKED TO THE AUDIO AND
+// VIDEO RENDERER THROUGH TUNNELS FOR SYNC.  THE CLOCK COMPONENT FUNCTIONS AS A TRANSPORT 
+// CONTROL FACILITATING PAUSE, REWIND, FAST FORWARD, SLOW MOTION, ETC.
+//
+//**************************************************************************************
 
 #ifndef _AVCLOCK_H_
 #define _AVCLOCK_H_
@@ -26,9 +35,10 @@
 
 #include "OMXCore.h"
 
-#define DVD_TIME_BASE 1000000
+#define DVD_TIME_BASE 1000000 // MILLISECONDS
 #define DVD_NOPTS_VALUE    (-1LL<<52) // should be possible to represent in both double and __int64
 
+// MACROS FOR TIME CONVERSIONS...
 #define DVD_TIME_TO_SEC(x)  ((int)((double)(x) / DVD_TIME_BASE))
 #define DVD_TIME_TO_MSEC(x) ((int)((double)(x) * 1000 / DVD_TIME_BASE))
 #define DVD_SEC_TO_TIME(x)  ((double)(x) * DVD_TIME_BASE)
@@ -37,6 +47,7 @@
 #define DVD_PLAYSPEED_PAUSE       0       // frame stepping
 #define DVD_PLAYSPEED_NORMAL      1000
 
+// CONVERSION TO/FROM OMX TIME STRUCTURE...
 #ifdef OMX_SKIP64BIT
 static inline OMX_TICKS ToOMXTime(int64_t pts)
 {
@@ -55,6 +66,7 @@ static inline int64_t FromOMXTime(OMX_TICKS ticks)
 #define ToOMXTime(x) (x)
 #endif
 
+//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 class OMXClock
 {
 protected:
@@ -65,7 +77,7 @@ protected:
   OMX_TIME_CLOCKSTATE   m_eState;
   OMX_TIME_REFCLOCKTYPE m_eClock;
 private:
-  COMXCoreComponent m_omx_clock;
+  COMXCoreComponent m_omx_clock; // <-- ** THE ACTUAL OMX CLOCK COMPONENT **
   double            m_last_media_time;
   double            m_last_media_time_read;
   DllAvFormat       m_dllAvFormat;

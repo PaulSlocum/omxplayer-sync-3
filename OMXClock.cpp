@@ -18,6 +18,7 @@
  *
  */
 
+
 #if (defined HAVE_CONFIG_H) && (!defined WIN32)
   #include "config.h"
 #elif defined(_WIN32)
@@ -34,6 +35,9 @@
 #define OMX_PRE_ROLL 200
 #define TP(speed) ((speed) < 0 || (speed) > 4*DVD_PLAYSPEED_NORMAL)
 
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXClock::OMXClock()
 {
   m_dllAvFormat.Load();
@@ -50,6 +54,8 @@ OMXClock::OMXClock()
   pthread_mutex_init(&m_lock, NULL);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXClock::~OMXClock()
 {
   OMXDeinitialize();
@@ -58,16 +64,19 @@ OMXClock::~OMXClock()
   pthread_mutex_destroy(&m_lock);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXClock::Lock()
 {
   pthread_mutex_lock(&m_lock);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXClock::UnLock()
 {
   pthread_mutex_unlock(&m_lock);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXClock::OMXSetClockPorts(OMX_TIME_CONFIG_CLOCKSTATETYPE *clock, bool has_video, bool has_audio)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -89,6 +98,7 @@ void OMXClock::OMXSetClockPorts(OMX_TIME_CONFIG_CLOCKSTATETYPE *clock, bool has_
   }
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool OMXClock::OMXSetReferenceClock(bool has_audio, bool lock /* = true */)
 {
   if(lock)
@@ -123,6 +133,8 @@ bool OMXClock::OMXSetReferenceClock(bool has_audio, bool lock /* = true */)
   return ret;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// INTIALIZE OMX CLOCK COMPONENT
 bool OMXClock::OMXInitialize()
 {
   std::string componentName = "";
@@ -136,6 +148,7 @@ bool OMXClock::OMXInitialize()
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 void OMXClock::OMXDeinitialize()
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -147,6 +160,9 @@ void OMXClock::OMXDeinitialize()
   m_last_media_time = 0.0f;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// SETS OMX CLOCK COMPONENT TO STATE OMX_StateExecuting.
+// ACCORDING TO THE OPENMAX DOCS: OMX_StateExecuting = "Component is transferring buffers and is processing data"
 bool OMXClock::OMXStateExecute(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -162,7 +178,7 @@ bool OMXClock::OMXStateExecute(bool lock /* = true */)
 
     OMXStateIdle(false);
 
-    omx_err = m_omx_clock.SetStateForComponent(OMX_StateExecuting);
+    omx_err = m_omx_clock.SetStateForComponent(OMX_StateExecuting); 
     if (omx_err != OMX_ErrorNone)
     {
       CLog::Log(LOGERROR, "OMXClock::StateExecute m_omx_clock.SetStateForComponent\n");
@@ -179,6 +195,8 @@ bool OMXClock::OMXStateExecute(bool lock /* = true */)
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// OMX_StateIdle = "Component has all resources but has not transferred any buffers or begun processing data."
 void OMXClock::OMXStateIdle(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -195,11 +213,14 @@ void OMXClock::OMXStateIdle(bool lock /* = true */)
     UnLock();
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// RETURNS A POINTER TO THE CLOCK COMPONENT
 COMXCoreComponent *OMXClock::GetOMXClock()
 {
   return &m_omx_clock;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool  OMXClock::OMXStop(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -234,6 +255,7 @@ bool  OMXClock::OMXStop(bool lock /* = true */)
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool OMXClock::OMXStep(int steps /* = 1 */, bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -266,6 +288,7 @@ bool OMXClock::OMXStep(int steps /* = 1 */, bool lock /* = true */)
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool OMXClock::OMXReset(bool has_video, bool has_audio, bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -316,6 +339,9 @@ bool OMXClock::OMXReset(bool has_video, bool has_audio, bool lock /* = true */)
   return true;
 }
 
+
+///////////////////////////////////////////////////////////////////////
+// *GETS* THE MEDIA TIME (UNLIKE THE OTHER FUNCTION WITH THE SAME NAME THAT *SETS* THE MEDIA TIME)
 double OMXClock::OMXMediaTime(bool lock /* = true */)
 {
   double pts = 0.0;
@@ -360,6 +386,7 @@ double OMXClock::OMXMediaTime(bool lock /* = true */)
   return pts;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 double OMXClock::OMXClockAdjustment(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -393,6 +420,8 @@ double OMXClock::OMXClockAdjustment(bool lock /* = true */)
 }
 
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// *SETS* THE MEDIA TIME (UNLIKE THE OTHER FUNCTION WITH THE SAME NAME THAT *GETS* THE MEDIA TIME)
 // Set the media time, so calls to get media time use the updated value,
 // useful after a seek so mediatime is updated immediately (rather than waiting for first decoded packet)
 bool OMXClock::OMXMediaTime(double pts, bool lock /* = true*/)
@@ -414,8 +443,10 @@ bool OMXClock::OMXMediaTime(double pts, bool lock /* = true*/)
   else
     index = OMX_IndexConfigTimeCurrentVideoReference;
 
+  // CONVERT THE GIVEN TIME DOUBLE TO THE OMX TIME STRUCT (TWO 32BIT INTS IN A STRUCT) 
   timeStamp.nTimestamp = ToOMXTime(pts);
 
+  // SET THE NEW TIME (I THINK?)...
   omx_err = m_omx_clock.SetConfig(index, &timeStamp);
   if(omx_err != OMX_ErrorNone)
   {
@@ -436,6 +467,8 @@ bool OMXClock::OMXMediaTime(double pts, bool lock /* = true*/)
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// PAUSE (THIS FUNCTION IS NOT A TOGGLE)
 bool OMXClock::OMXPause(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -456,6 +489,8 @@ bool OMXClock::OMXPause(bool lock /* = true */)
   return m_pause == true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// UNPAUSE (THIS FUNCTION IS NOT A TOGGLE)
 bool OMXClock::OMXResume(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -476,6 +511,7 @@ bool OMXClock::OMXResume(bool lock /* = true */)
   return m_pause == false;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool OMXClock::OMXSetSpeed(int speed, bool lock /* = true */, bool pause_resume /* = false */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -515,6 +551,7 @@ bool OMXClock::OMXSetSpeed(int speed, bool lock /* = true */, bool pause_resume 
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
 bool OMXClock::HDMIClockSync(bool lock /* = true */)
 {
   if(m_omx_clock.GetComponent() == NULL)
@@ -552,6 +589,8 @@ bool OMXClock::HDMIClockSync(bool lock /* = true */)
   return true;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// SLEEP IN MILLISECONDS
 void OMXClock::OMXSleep(unsigned int dwMilliSeconds)
 {
   struct timespec req;
@@ -561,6 +600,9 @@ void OMXClock::OMXSleep(unsigned int dwMilliSeconds)
   while ( nanosleep(&req, &req) == -1 && errno == EINTR && (req.tv_nsec > 0 || req.tv_sec > 0));
 }
 
+//======================================================================================
+// THIS IS MIGHT BE THE ONLY FUNCTION THAT ACTUALLY GETS THE SYSTEM TIME???
+// LOOKS LIKE THIS RETURNS THE TIME IN NANOSECONDS...
 static int64_t CurrentHostCounter(void)
 {
   struct timespec now;
@@ -568,14 +610,25 @@ static int64_t CurrentHostCounter(void)
   return( ((int64_t)now.tv_sec * 1000000000L) + now.tv_nsec );
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// RETURNS MICROSECONDS(?) AS 64 BIT INTEGER...
 int64_t OMXClock::GetAbsoluteClock()
 {
-  return CurrentHostCounter()/1000;
+  return CurrentHostCounter()/1000; // LOOKS LIKE THIS CONVERTS NANOSECONDS TO MICROSECONDS???
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////
+// RETURNS MICROSECONDS(?) AS DOUBLE...
 double OMXClock::GetClock(bool interpolated /*= true*/)
 {
   return GetAbsoluteClock();
 }
 #endif
+
+
+
+
+
+
+
 

@@ -33,6 +33,8 @@
 using namespace std;
 using namespace boost;
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
 OMXPlayerSubtitles::OMXPlayerSubtitles() BOOST_NOEXCEPT
 : m_visible(),
   m_use_external_subtitles(),
@@ -49,11 +51,14 @@ OMXPlayerSubtitles::OMXPlayerSubtitles() BOOST_NOEXCEPT
 #endif
 {}
 
+//////////////////////////////////////////////////////////////////////////////////////////
+// DESTRUCTOR
 OMXPlayerSubtitles::~OMXPlayerSubtitles() BOOST_NOEXCEPT
 {
   Close();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerSubtitles::Open(size_t stream_count,
                               vector<Subtitle>&& external_subtitles,
                               const string& font_path,
@@ -98,6 +103,7 @@ bool OMXPlayerSubtitles::Open(size_t stream_count,
   return true;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::Close() BOOST_NOEXCEPT
 {
   if(Running())
@@ -114,6 +120,7 @@ void OMXPlayerSubtitles::Close() BOOST_NOEXCEPT
 #endif
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::Process()
 {
   try
@@ -136,6 +143,7 @@ void OMXPlayerSubtitles::Process()
   m_thread_stopped.store(true, memory_order_relaxed);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 template <typename Iterator>
 Iterator FindSubtitle(Iterator begin, Iterator end, int time)
 {
@@ -143,6 +151,7 @@ Iterator FindSubtitle(Iterator begin, Iterator end, int time)
     [](int a, const Subtitle& b) { return a < b.stop; });
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::
 RenderLoop(const string& font_path,
            const string& italic_font_path,
@@ -322,6 +331,7 @@ RenderLoop(const string& font_path,
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::FlushRenderer()
 {
   assert(GetVisible());
@@ -340,6 +350,7 @@ void OMXPlayerSubtitles::FlushRenderer()
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::Flush() BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -356,18 +367,21 @@ void OMXPlayerSubtitles::Flush() BOOST_NOEXCEPT
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::Resume() BOOST_NOEXCEPT
 {
   assert(m_open);
   SendToRenderer(Message::SetPaused{false});
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::Pause() BOOST_NOEXCEPT
 {
   assert(m_open);
   SendToRenderer(Message::SetPaused{true});
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::SetUseExternalSubtitles(bool use) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -378,6 +392,7 @@ void OMXPlayerSubtitles::SetUseExternalSubtitles(bool use) BOOST_NOEXCEPT
     FlushRenderer();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::SetDelay(int value) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -386,6 +401,7 @@ void OMXPlayerSubtitles::SetDelay(int value) BOOST_NOEXCEPT
   SendToRenderer(Message::SetDelay{value});
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::SetVisible(bool visible) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -408,6 +424,7 @@ void OMXPlayerSubtitles::SetVisible(bool visible) BOOST_NOEXCEPT
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::SetActiveStream(size_t index) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -418,6 +435,7 @@ void OMXPlayerSubtitles::SetActiveStream(size_t index) BOOST_NOEXCEPT
     FlushRenderer();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 vector<string> OMXPlayerSubtitles::GetTextLines(OMXPacket *pkt)
 {
   assert(pkt);
@@ -444,6 +462,7 @@ vector<string> OMXPlayerSubtitles::GetTextLines(OMXPacket *pkt)
   return text_lines;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 bool OMXPlayerSubtitles::AddPacket(OMXPacket *pkt, size_t stream_index) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -488,6 +507,7 @@ bool OMXPlayerSubtitles::AddPacket(OMXPacket *pkt, size_t stream_index) BOOST_NO
   return true;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::DisplayText(const std::string& text, int duration) BOOST_NOEXCEPT
 {
   assert(m_open);
@@ -497,7 +517,12 @@ void OMXPlayerSubtitles::DisplayText(const std::string& text, int duration) BOOS
   SendToRenderer(Message::DisplayText{std::move(text_lines), duration});
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 void OMXPlayerSubtitles::SetSubtitleRect(int x1, int y1, int x2, int y2) BOOST_NOEXCEPT
 {
   SendToRenderer(Message::SetRect{x1, y1, x2, y2});
 }
+
+
+
+

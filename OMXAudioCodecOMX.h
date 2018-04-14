@@ -20,11 +20,23 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//***************************************************************************************
+// 
+// CLASS: COMXAudioCodecOMX
+//
+// THIS CLASS IS A SOFTWARE AUDIO DECODER THAT USES FFMPEG TO DECODE.  
+// THIS IS USED WHEN HARDWARE DECODE ISN'T POSSIBLE OR WHEN THE AUDIO IS
+// SET TO PASSTHROGUH.
+//
+// THIS SPECIAL DECODING CLASS APPEARS TO BE UNIQUE TO AUDIO (NO SIMILAR SOFTWARE 
+// DECODING CLASS FOR VIDEO)
+//
+//***************************************************************************************
 
-#include "DllAvCodec.h"
-#include "DllAvFormat.h"
-#include "DllAvUtil.h"
-#include "DllSwResample.h"
+#include "DllAvCodec.h" // FFMPEG
+#include "DllAvFormat.h" // FFMPEG
+#include "DllAvUtil.h" // FFMPEG
+#include "DllSwResample.h" // FFMPEG
 
 #include "OMXStreamInfo.h"
 #include "utils/PCMRemap.h"
@@ -69,7 +81,7 @@ protected:
   bool m_bNoConcatenate;
   unsigned int  m_frameSize;
   double m_dts, m_pts;
-  DllAvCodec m_dllAvCodec;
-  DllAvUtil m_dllAvUtil;
-  DllSwResample m_dllSwResample;
+  DllAvCodec m_dllAvCodec; // FFMPEG
+  DllAvUtil m_dllAvUtil; // FFMPEG
+  DllSwResample m_dllSwResample; // FFMPEG
 };

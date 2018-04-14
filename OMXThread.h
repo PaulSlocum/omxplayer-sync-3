@@ -18,6 +18,19 @@
  *  http://www.gnu.org/copyleft/gpl.html
  *
  */
+//****************************************************************************************
+//
+// CLASS: OMXThread
+// 
+// THIS CLASS APPEARS TO BASICALLY BE A WRAPPER FOR THE POSIX THREAD LIBRARY.  UPON
+// A CALL TO Create() IT STARTS A THREAD THAT MAKES A CALLBACK TO PURE VIRTUAL
+// FUNCTION Process() WHICH NEEDS TO BE IMPLEMENTED IN THE SUBCLASS.
+//
+// THIS CLASS IS SUBCLASSED BY CLASSES Keyboard, OMXPlayerAudio, OMXPlayerVideo, 
+// AND OMXPlayerSubtitles.  IT IS NEVER USED AS A STANDALONE CLASS IN THIS PROJECT.
+//
+//****************************************************************************************
+
 
 #ifndef _OMX_THREAD_H_
 #define _OMX_THREAD_H_
