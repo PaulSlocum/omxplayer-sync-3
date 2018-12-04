@@ -1,6 +1,6 @@
 # omxplayer-sync-3
 
-This is Raspberry Pi's Omxplayer media player program with modifications to facilitate scheduled and synchronized playback. This version of Omxplayer is used in my [Andor 1 synchronizing media player](https://www.lzxindustries.net/shop/product/lzxandor1-andor-1-2657).  The [official Omxplayer project is here](https://github.com/popcornmix/omxplayer), and there are also two other versions of Omxplayer with synchronization capabilities: [omxplayer-sync](https://github.com/turingmachine/omxplayer-sync) and [omxplayer-sync-2](https://github.com/pukster/omxplayer-sync-2).  The original readme.md follows below...
+This is Raspberry Pi's Omxplayer media player program with modifications to facilitate scheduled and synchronized playback. This version of Omxplayer is used in my [Andor 1 synchronizing media player](https://www.lzxindustries.net/shop/product/lzxandor1-andor-1-2657).  The official Omxplayer project is [here](https://github.com/popcornmix/omxplayer), and there are also two other versions of Omxplayer with synchronization capabilities: [omxplayer-sync](https://github.com/turingmachine/omxplayer-sync) and [omxplayer-sync-2](https://github.com/pukster/omxplayer-sync-2).  The original readme.md follows below...
 
  - - - -
  - - - -
